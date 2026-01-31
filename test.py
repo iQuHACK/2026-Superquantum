@@ -17,8 +17,9 @@ from qiskit.quantum_info import Operator
 
 @dataclass(frozen=True)
 class ParsedGate:
-    name: str   # normalized gate name: H, T, S, X, TDG, SDG
+    name: str   # normalized gate name: H, T, S, X, TDG, SDG, CX
     qubit: int
+    control: int = -1  # for CX gates, -1 means not applicable
 
 
 def _strip_comments(line: str) -> str:
@@ -60,6 +61,15 @@ def read_qasm(path: str) -> List[ParsedGate]:
             if not line:
                 continue
 
+            # Skip QASM3 header and declaration lines
+            if (line.startswith("OPENQASM") or 
+                line.startswith("include") or 
+                line.startswith("qubit") or
+                line.startswith("bit") or
+                line.startswith("creg") or
+                line.startswith("qreg")):
+                continue
+
             # Extract gate token: leading letters (plus optional dagger symbol already normalized later)
             m_gate = re.match(r"\s*([A-Za-z]+|[A-Za-z]†)\b", line)
             if not m_gate:
@@ -67,6 +77,22 @@ def read_qasm(path: str) -> List[ParsedGate]:
 
             gate_raw = m_gate.group(1)
             gate = _normalize_gate_name(gate_raw)
+
+            # Handle CX gates (two-qubit)
+            if gate == "CX":
+                # Extract two qubit indices: cx q[0], q[1];
+                qubit_matches = re.findall(r"(-?\d+)", line)
+                if len(qubit_matches) < 2:
+                    raise ValueError(f"{path}:{lineno}: CX gate requires two qubit indices, found {len(qubit_matches)}: {raw_line.rstrip()}")
+                
+                control = int(qubit_matches[0])
+                target = int(qubit_matches[1])
+                
+                if control < 0 or target < 0:
+                    raise ValueError(f"{path}:{lineno}: Qubit indices must be >= 0, got control={control}, target={target}.")
+                
+                gates.append(ParsedGate("CX", target, control))
+                continue
 
             # Extract first integer on the line as qubit index (supports q[0], q0, etc.)
             m_q = re.search(r"(-?\d+)", line)
@@ -78,7 +104,7 @@ def read_qasm(path: str) -> List[ParsedGate]:
             if gate not in {"H", "T", "S", "X", "TDG", "SDG"}:
                 raise ValueError(
                     f"{path}:{lineno}: Unsupported gate '{gate_raw}' (normalized: {gate}). "
-                    f"Supported: H, T, S, X, TDG, SDG."
+                    f"Supported: H, T, S, X, TDG, SDG, CX."
                 )
 
             if q < 0:
@@ -93,7 +119,13 @@ def build_circuit_from_parsed(gates: List[ParsedGate], reverse: bool = False) ->
     if not gates:
         raise ValueError("No gates found in QASM file.")
 
-    max_q = max(g.qubit for g in gates)
+    # Find max qubit index (considering both target and control qubits)
+    max_q = 0
+    for g in gates:
+        max_q = max(max_q, g.qubit)
+        if g.control >= 0:  # CX gate
+            max_q = max(max_q, g.control)
+    
     qc = QuantumCircuit(max_q + 1)
 
     ordered = gates if reverse else list(reversed(gates))
@@ -127,6 +159,10 @@ def build_circuit_from_parsed(gates: List[ParsedGate], reverse: bool = False) ->
             qc.h(i)
             qc.t(i); qc.t(i); qc.t(i); qc.t(i)
             qc.h(i)
+
+        elif name == "CX":
+            # CNOT gate
+            qc.cx(g.control, i)
 
         else:
             raise ValueError(f"Internal error: unhandled gate {name!r}")
