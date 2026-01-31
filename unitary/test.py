@@ -148,22 +148,12 @@ def main():
     phase_ok, phase = equal_up_to_global_phase(U_qasm_converted, U_expected, atol=args.atol)
 
     print(f"QASM file: {args.qasm_file}")
-    print(f"Inferred id: {unitary_id}")
-    print(f"Qubits: {qc.num_qubits}")
-    print(f"Matrix shape: {U_qasm.shape}")
+    print(f"Unitary id: {unitary_id}")
     print()
     print(f"allclose (direct): {direct_ok}")
     print(f"allclose (up to global phase): {phase_ok}")
     if phase_ok and not direct_ok:
         print(f"Estimated global phase factor (U_qasm ≈ phase * U_expected): {phase}")
-
-    # Optional: show max entrywise error under best phase alignment
-    if phase_ok:
-        err = np.max(np.abs(U_qasm_converted - phase * U_expected))
-        print(f"Max |Δ| after phase alignment: {err:.3e}")
-    else:
-        err = np.max(np.abs(U_qasm_converted - U_expected))
-        print(f"Max |Δ| (no phase alignment): {err:.3e}")
 
 
 if __name__ == "__main__":
