@@ -105,6 +105,10 @@ def main():
 
     # ---- 3) Circuit -> unitary ----
     U_qasm = circuit_unitary(qc)
+    
+    print("Matrix from QASM file:")
+    print(U_qasm)
+    print()
 
     # ---- 4) Sanity: dimensions match ----
     if U_qasm.shape != U_expected.shape:
