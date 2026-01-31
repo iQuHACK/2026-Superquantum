@@ -1,29 +1,3 @@
-"""
-pygridsynth-style gate string/list -> Qiskit commands with custom decompositions.
-
-Default behavior:
-- Applies gates RIGHT -> LEFT (as requested).
-- Uses the custom mappings:
-    H -> qc.h(i)
-    T -> qc.t(i)
-    S -> qc.t(i); qc.t(i)                # S = T^2
-    X -> qc.h(i); qc.t(i)*4; qc.h(i)     # X = H Z H, and Z = T^4
-
-If reverse=True:
-- Applies gates LEFT -> RIGHT
-- Uses dagger versions of the mapped gates:
-    H -> qc.h(i)                         # self-adjoint
-    T -> qc.tdg(i)
-    S -> qc.tdg(i); qc.tdg(i)            # (T^2)† = (T†)^2
-    X -> qc.h(i); qc.tdg(i)*4; qc.h(i)   # X† = X
-
-Input accepted:
-- list[str] like ["H","T","S","X", ...]
-- string like "H T S X" or "HTSX" (compact mode splits into single chars)
-
-This script returns a QuantumCircuit and also can emit the literal command lines if desired.
-"""
-
 from __future__ import annotations
 from typing import Iterable, List, Sequence, Union
 import re
@@ -73,22 +47,6 @@ def _apply_gate(qc: QuantumCircuit, g: str, i: int, *, dagger: bool) -> None:
 
 
 def gates_to_qiskit_circuit(gates: GateSeq, i: int, *, reverse: bool = False) -> QuantumCircuit:
-    """
-    Parameters
-    ----------
-    gates : str | Sequence[str]
-        Gate sequence. Example: "H T S X" or "HTSX" or ["H","T","S","X"].
-    i : int
-        Qubit index to apply all gates to.
-    reverse : bool
-        If False (default): apply RIGHT->LEFT using non-dagger mappings.
-        If True: apply LEFT->RIGHT using dagger mappings (H same; T->tdg; etc.).
-
-    Returns
-    -------
-    QuantumCircuit
-        1-qubit circuit with operations applied to qubit i (requires qc has at least i+1 qubits).
-    """
     toks = _tokenize(gates)
 
     # default is RIGHT -> LEFT
@@ -102,10 +60,6 @@ def gates_to_qiskit_circuit(gates: GateSeq, i: int, *, reverse: bool = False) ->
 
 
 def gates_to_qiskit_lines(gates: GateSeq, i: int, *, reverse: bool = False) -> List[str]:
-    """
-    Same logic as `gates_to_qiskit_circuit`, but returns the literal command lines
-    like 'qc.h(i)', 'qc.t(i)', 'qc.tdg(i)', etc.
-    """
     toks = _tokenize(gates)
     ordered = toks if reverse else list(reversed(toks))
     dagger = reverse
