@@ -111,9 +111,6 @@ def count_t_gates_manual(qasm_str: str) -> int:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("qasm_file", help="Path to QASM file (e.g., unitary1.qasm)")
-    parser.add_argument("--id", type=int, default=None, help="Unitary id override")
-    parser.add_argument("--atol", type=float, default=1e-8, help="Absolute tolerance for comparisons")
     args = parser.parse_args()
 
     unitary_id = args.id if args.id is not None else parse_unitary_id_from_filename(args.qasm_file)
@@ -154,7 +151,7 @@ def main():
     print()
 
     err = np.linalg.norm(U_expected - aligned)
-    print(f"Max |Δ|: {err:.3e}")
+    print(f"Min |Δ|: {err:.3e}")
 
     # print t gate count
     t_count = count_t_gates_manual(qasm_src)
