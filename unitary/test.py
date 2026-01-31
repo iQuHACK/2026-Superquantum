@@ -41,7 +41,6 @@ def circuit_unitary(qc: QuantumCircuit) -> np.ndarray:
     # Operator(qc) constructs the full unitary for circuits with no measurement/reset.
     return Operator(qc).data
 
-
 def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[bool, complex]:
     """
     Returns (is_equal, phase_factor) where phase_factor is a complex scalar e^{iθ}
@@ -50,23 +49,32 @@ def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[b
     if U.shape != V.shape:
         return False, 1.0 + 0.0j
 
-    # Find a reference element where V is nonzero to estimate phase robustly
-    idx = None
-    flatV = V.ravel()
-    for k in range(flatV.size):
-        if abs(flatV[k]) > atol:
-            idx = k
-            break
+    mask = (np.abs(V) > atol) & (np.abs(U) > atol)
 
-    if idx is None:
-        # V is basically all zeros (shouldn't happen for a unitary)
-        return np.allclose(U, V, atol=atol), 1.0 + 0.0j
+    if not np.any(mask):
+        if np.allclose(U, 0, atol=atol) and np.allclose(V, 0, atol=atol):
+            return True, 1.0 + 0.0j
+        return False, 1.0 + 0.0j
 
-    phase = U.ravel()[idx] / V.ravel()[idx]
-    if abs(phase) > 0:
-        phase = phase / abs(phase)  # normalize to unit magnitude
+    raw_ratios = U[mask] / V[mask]
 
-    return np.allclose(U, phase * V, atol=atol), phase
+    candidates = raw_ratios / np.abs(raw_ratios)
+
+    best_phase = 1.0 + 0.0j
+    min_dist = float('inf')
+
+    for phase in candidates:
+
+        dist = np.linalg.norm(U - (phase * V))
+        
+        if dist < min_dist:
+            min_dist = dist
+            best_phase = phase
+
+    print(f"Best phase found: {best_phase:.4f} (Distance: {min_dist:.2e})")
+
+    # 4. Final strict check using the best phase found
+    return np.allclose(U, best_phase * V, atol=atol), best_phase
 
 
 def parse_unitary_id_from_filename(path: str) -> int:
