@@ -1,6 +1,5 @@
 from __future__ import annotations
-from typing import Iterable, List, Sequence, Union
-import re
+from typing import List, Sequence, Union
 
 from qiskit import QuantumCircuit
 
@@ -13,9 +12,15 @@ GateSeq = Union[str, Sequence[str]]
 def _tokenize(gates: GateSeq) -> List[str]:
     if isinstance(gates, str):
         s = gates.strip().replace(" ", "")
-        s = "".join(c for c in s.upper() if c in "HTSX")
-        return list(s)
-    return [str(g).strip().upper() for g in gates if str(g).strip().upper() in "HTSX"]
+    else:
+        s = "".join(str(g).strip() for g in gates)
+    
+    s = "".join(c for c in s.upper() if c in "HTSX")
+    
+    while "TTTTTTT" in s:
+        s = s.replace("TTTTTTT", "t")
+    
+    return list(s)
 
 
 def _apply_gate(qc: QuantumCircuit, g: str, i: int, *, dagger: bool) -> None:
@@ -28,6 +33,10 @@ def _apply_gate(qc: QuantumCircuit, g: str, i: int, *, dagger: bool) -> None:
     def Rzhalf():
         qc.tdg(i) if dagger else qc.t(i)
 
+    if g == "t":
+        qc.tdg(i) if not dagger else qc.t(i)
+        return
+    
     if g_up == "T":
         Rzhalf()
         return
@@ -69,6 +78,8 @@ def gates_to_qiskit_lines(gates: GateSeq, i: int, *, reverse: bool = False) -> L
         gu = g.upper()
         if gu == "H":
             lines.append(f"qc.h({i})")
+        elif g == "t":
+            lines.append(f"qc.t({i})" if dagger else f"qc.tdg({i})")
         elif gu == "T":
             Rzhalf()
         elif gu == "S":
