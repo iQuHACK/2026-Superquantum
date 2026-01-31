@@ -81,6 +81,41 @@ def count_t_gates(qc: QuantumCircuit) -> int:
     t_count = ops.get("t", 0) + ops.get("tdg", 0)
     return t_count
 
+def count_t_gates_manual(qasm_str: str) -> int:
+    gate_t_counts = {}
+    
+    # Extract all gate definitions: gate NAME ... { BODY }
+    gate_defs = re.findall(r"gate\s+(\w+).*?\{(.*?)\}", qasm_str, re.DOTALL)
+    
+    # We loop multiple times to resolve nesting (e.g., 42 calls 43)
+    # For most generated circuits, 3-5 passes is plenty.
+    for _ in range(5): 
+        for name, body in gate_defs:
+            # 1. Count direct 't' and 'tdg' in this definition
+            current_count = len(re.findall(r"\b(t|tdg)\b", body))
+            
+            # 2. Add counts from OTHER custom gates called inside THIS body
+            for other_name, other_count in gate_t_counts.items():
+                if other_name != name:
+                    # Find how many times 'other_name' is called in 'body'
+                    calls = len(re.findall(rf"\b{other_name}\b", body))
+                    current_count += (calls * other_count)
+            
+            gate_t_counts[name] = current_count
+
+    # 3. Process the main execution block (everything outside 'gate' definitions)
+    main_body = re.sub(r"gate.*?\{.*?\}", "", qasm_str, flags=re.DOTALL)
+    
+    # Start with direct T-calls in the main body
+    total_t = len(re.findall(r"\b(t|tdg)\b", main_body))
+    
+    # Add counts from custom gate calls in the main body
+    for name, count in gate_t_counts.items():
+        calls = len(re.findall(rf"\b{name}\b", main_body))
+        total_t += (calls * count)
+        
+    return total_t
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("qasm_file", help="Path to QASM file (e.g., unitary1.qasm)")
@@ -98,7 +133,7 @@ def main():
 
     U_expected = np.asarray(expected[unitary_id], dtype=complex)
 
-    qc, _ = load_qasm_circuit(args.qasm_file)
+    qc, qasm_src = load_qasm_circuit(args.qasm_file)
 
     if qc.num_clbits > 0:
         inst_names = [inst.operation.name for inst in qc.data]
@@ -129,7 +164,7 @@ def main():
     print(f"Max |Δ|: {err:.3e}")
 
     # print t gate count
-    t_count = count_t_gates(qc)
+    t_count = count_t_gates_manual(qasm_src)
     print(f"T-gate count: {t_count}")
 
 if __name__ == "__main__":
