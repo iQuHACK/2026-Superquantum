@@ -51,7 +51,7 @@ def load_qasm_circuit(path: str) -> tuple[QuantumCircuit, str]:
 def circuit_unitary(qc: QuantumCircuit) -> np.ndarray:
     return Operator(qc).data
 
-def distance_global_phase(actual: np.ndarray, expected: np.ndarray, atol=1e-8) -> np.ndarray:
+def distance_global_phase(actual: np.ndarray, expected: np.ndarray) -> np.ndarray:
     best_phase = 1.0 + 0.0j
     min_dist = float('inf')
 
@@ -121,7 +121,7 @@ def main():
             f"QASM qubits: {qc.num_qubits} -> expected dimension {2**qc.num_qubits}"
         )
 
-    aligned = distance_global_phase(U_expected, U_qasm, atol=args.atol)
+    aligned = distance_global_phase(U_qasm, U_expected)
 
     print("Best-aligned actual matrix (phase * actual, rounded to 6 decimals):")
     print(np.round(aligned, 6))
