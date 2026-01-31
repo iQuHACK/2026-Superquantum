@@ -127,11 +127,23 @@ def main():
     # Convert QASM matrix from Qiskit's ordering to match expected matrix ordering
     U_qasm_converted = little_endian_to_big_endian(U_qasm)
     
-    print("Matrix from QASM file:")
-    print(U_qasm)
+    print("Matrix from QASM file (rounded to 6 decimals):")
+    print(np.round(U_qasm, 6))
     print()
-    print("Converted matrix (Qiskit -> expected ordering):")
-    print(U_qasm_converted)
+    print("Converted matrix (Qiskit -> expected ordering, rounded to 6 decimals):")
+    print(np.round(U_qasm_converted, 6))
+    print()
+    
+    # Show what changes were made
+    print("Changes made during conversion:")
+    diff_matrix = U_qasm_converted - U_qasm
+    max_change = np.max(np.abs(diff_matrix))
+    if max_change > 1e-10:
+        print(f"Maximum absolute change: {max_change:.3e}")
+        print("Difference matrix (converted - original, rounded to 6 decimals):")
+        print(np.round(diff_matrix, 6))
+    else:
+        print("No significant changes (matrices are essentially identical)")
     print()
 
     # ---- 4) Sanity: dimensions match ----
