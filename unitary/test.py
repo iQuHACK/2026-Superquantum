@@ -27,7 +27,7 @@ expected = {
     ]),
     3: scipy.linalg.expm(1j*np.pi/7*(np.kron(Z,Z))),
     4: scipy.linalg.expm(1j*np.pi/7*(np.kron(X,X)+np.kron(Y,Y))),
-    5: scipy.linalg.expm(1j*np.pi/7*(np.kron(X,X)+np.kron(Y,Y)+np.kron(Z,Z))),
+    5: scipy.linalg.expm(1j*np.pi/4*(np.kron(X,X)+np.kron(Y,Y)+np.kron(Z,Z))),
     6: scipy.linalg.expm(1j*np.pi/7*(np.kron(X,X)+np.kron(Z,np.eye(2))+np.kron(np.eye(2),Z)))
 }
 
@@ -145,13 +145,13 @@ def main():
             f"QASM qubits: {qc.num_qubits} -> expected dimension {2**qc.num_qubits}"
         )
 
-    aligned = distance_global_phase(U_expected, U_qasm)
+    aligned = distance_global_phase(U_qasm, U_expected)
 
     print("Best-aligned actual matrix (phase * actual, rounded to 6 decimals):")
     print(np.round(aligned, 6))
     print()
 
-    err = np.linalg.norm(U_expected - aligned)
+    err = np.linalg.norm(aligned - U_expected)
     print(f"Min |Δ|: {err:.3e}")
 
     # print t gate count
