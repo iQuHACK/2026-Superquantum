@@ -8,7 +8,7 @@ epsilon = 1e-10
 
 qc = QuantumCircuit(2)
 qc.cx(0, 1)
-qc.append(Rz(2*theta, epsilon).to_gate(), [1])
+qc.append(Rz(-2*theta, epsilon).to_gate(), [1])
 qc.cx(0, 1)
 
 qasm3_str = dumps3(qc)

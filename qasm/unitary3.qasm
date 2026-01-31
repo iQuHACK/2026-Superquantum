@@ -270,6 +270,6 @@ gate _circuit_158 _gate_q_0 {
   h _gate_q_0;
 }
 qubit[2] q;
-cx q[0], q[1];
-_circuit_158 q[1];
-cx q[0], q[1];
+cx q[1], q[0];
+_circuit_158 q[0];
+cx q[1], q[0];

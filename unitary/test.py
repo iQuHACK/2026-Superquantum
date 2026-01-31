@@ -2,50 +2,42 @@ import argparse
 import os
 import re
 import numpy as np
+import scipy.linalg
 
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator
 from qiskit.qasm3 import loads
 
+X = np.array([[0, 1], [1, 0]])
+Y = np.array([[0, -1j], [1j, 0]])
+Z = np.array([[1, 0], [0, -1]])
+
+RX = lambda theta: np.array([[np.cos(theta/2), -1j*np.sin(theta/2)], [-1j*np.sin(theta/2), np.cos(theta/2)]])
+RY = lambda theta: np.array([[np.cos(theta/2), -np.sin(theta/2)], [np.sin(theta/2), np.cos(theta/2)]])
+RZ = lambda theta: np.array([[np.exp(-1j*theta/2), 0], [0, np.exp(1j*theta/2)]])
+
 expected = {
-    1: np.array([
-        [1, 0, 0, 0],
-        [0, 0, 0, -1j],
-        [0, 0, 1, 0],
-        [0, 1j, 0, 0]
+    1: np.block([
+        [np.eye(2), np.zeros((2,2))],
+        [np.zeros((2,2)), Y]
     ]),
-    2: np.array([
-        [1, 0, 0, 0],
-        [0, np.cos(np.pi / 14), 0, -np.sin(np.pi / 14)],
-        [0, 0, 1, 0],
-        [0, np.sin(np.pi / 14), 0, np.cos(np.pi / 14)]
+    2: np.block([
+        [np.eye(2), np.zeros((2,2))],
+        [np.zeros((2,2)), RY(np.pi/7)]
     ]),
-    3: np.array([
-        [np.exp(-1j*np.pi/7), 0, 0, 0],
-        [0, np.exp(1j*np.pi/7), 0, 0],
-        [0, 0, np.exp(1j*np.pi/7), 0],
-        [0, 0, 0, np.exp(-1j*np.pi/7)]
-    ]),
-    4: np.array([
-        [1, 0, 0, 0],
-        [0, np.cos(2*np.pi/7), 1j*np.sin(2*np.pi/7), 0],
-        [0, 1j*np.sin(2*np.pi/7), np.cos(2*np.pi/7), 0],
-        [0, 0, 0, 1]
-    ]),
-    5: np.array([
-        [np.exp(-1j*np.pi/7), 0, 0, 0],
-        [0, (np.exp(3*1j*np.pi/7)+np.exp(-1j*np.pi/7))/2, (np.exp(3*1j*np.pi/7)-np.exp(-1j*np.pi/7))/2, 0],
-        [0, (np.exp(3*1j*np.pi/7)-np.exp(-1j*np.pi/7))/2, (np.exp(3*1j*np.pi/7)+np.exp(-1j*np.pi/7))/2, 0],
-        [0, 0, 0, np.exp(-1j*np.pi/7)]
-    ])
+    3: scipy.linalg.expm(1j*np.pi/7*(np.kron(Z,Z))),
+    4: scipy.linalg.expm(1j*np.pi/7*(np.kron(X,X)+np.kron(Y,Y))),
+    5: scipy.linalg.expm(1j*np.pi/7*(np.kron(X,X)+np.kron(Y,Y)+np.kron(Z,Z))),
+    6: scipy.linalg.expm(1j*np.pi/7*(np.kron(X,X)+np.kron(Z,np.eye(2))+np.kron(np.eye(2),Z)))
 }
 
-def load_qasm_circuit(path: str) -> QuantumCircuit:
-    with open(path, "r") as f:
+def load_qasm_circuit(path: str) -> tuple[QuantumCircuit, str]:
+    with open(path, "r", encoding="utf-8") as f:
         qasm3_src = f.read()
 
     qc = loads(qasm3_src)
     return qc, qasm3_src
+
 
 def circuit_unitary(qc: QuantumCircuit) -> np.ndarray:
     return Operator(qc).data
@@ -56,7 +48,7 @@ def distance_global_phase(actual: np.ndarray, expected: np.ndarray) -> np.ndarra
 
     for phase in np.arange(-2 * np.pi, 2 * np.pi, .001):
         phase_factor = np.exp(1j * phase)
-        dist = np.linalg.norm((phase_factor * actual) -  expected)
+        dist = np.linalg.norm((phase_factor * actual) - expected)
         
         if dist < min_dist:
             min_dist = dist
@@ -66,6 +58,7 @@ def distance_global_phase(actual: np.ndarray, expected: np.ndarray) -> np.ndarra
     aligned_matrix = best_phase * actual
     
     return aligned_matrix
+
 
 def parse_unitary_id_from_filename(path: str) -> int:
     base = os.path.basename(path)
@@ -140,7 +133,7 @@ def main():
         if "measure" in inst_names or "reset" in inst_names:
             raise ValueError("Circuit contains measure/reset; cannot form a single unitary Operator.")
 
-    U_qasm = circuit_unitary(qc).T
+    U_qasm = circuit_unitary(qc)
     
     print("Expected matrix:")
     print(np.round(U_expected, 6))
@@ -160,7 +153,7 @@ def main():
     print(np.round(aligned, 6))
     print()
 
-    err = np.max(np.abs(U_expected - aligned))
+    err = np.linalg.norm(U_expected - aligned)
     print(f"Max |Δ|: {err:.3e}")
 
     # print t gate count
