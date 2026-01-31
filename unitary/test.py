@@ -111,9 +111,10 @@ def count_t_gates_manual(qasm_str: str) -> int:
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("qasm_file", help="Path to QASM file (e.g., unitary1.qasm)")
     args = parser.parse_args()
 
-    unitary_id = args.id if args.id is not None else parse_unitary_id_from_filename(args.qasm_file)
+    unitary_id = parse_unitary_id_from_filename(args.qasm_file)
 
     if unitary_id not in expected:
         raise KeyError(
