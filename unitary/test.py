@@ -41,20 +41,21 @@ def circuit_unitary(qc: QuantumCircuit) -> np.ndarray:
     # Operator(qc) constructs the full unitary for circuits with no measurement/reset.
     return Operator(qc).data
 
-def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[bool, complex]:
+def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[bool, complex, np.ndarray]:
     """
-    Returns (is_equal, phase_factor) where phase_factor is a complex scalar e^{iθ}
-    such that U ≈ phase_factor * V if is_equal is True.
+    Returns (is_equal, phase_factor, aligned_matrix) where:
+    - phase_factor is a complex scalar e^{iθ} such that U ≈ phase_factor * V
+    - aligned_matrix is phase_factor * V (the best-aligned version of V)
     """
     if U.shape != V.shape:
-        return False, 1.0 + 0.0j
+        return False, 1.0 + 0.0j, V
 
     mask = (np.abs(V) > atol) & (np.abs(U) > atol)
 
     if not np.any(mask):
         if np.allclose(U, 0, atol=atol) and np.allclose(V, 0, atol=atol):
-            return True, 1.0 + 0.0j
-        return False, 1.0 + 0.0j
+            return True, 1.0 + 0.0j, V
+        return False, 1.0 + 0.0j, V
 
     raw_ratios = U[mask] / V[mask]
 
@@ -64,7 +65,6 @@ def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[b
     min_dist = float('inf')
 
     for phase in candidates:
-
         dist = np.linalg.norm(U - (phase * V))
         
         if dist < min_dist:
@@ -73,8 +73,12 @@ def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[b
 
     print(f"Best phase found: {best_phase:.4f} (Distance: {min_dist:.2e})")
 
-    # 4. Final strict check using the best phase found
-    return np.allclose(U, best_phase * V, atol=atol), best_phase
+    # Calculate the best-aligned matrix
+    aligned_matrix = best_phase * V
+    
+    # Final strict check using the best phase found
+    is_equal = np.allclose(U, aligned_matrix, atol=atol)
+    return is_equal, best_phase, aligned_matrix
 
 
 def parse_unitary_id_from_filename(path: str) -> int:
@@ -141,7 +145,12 @@ def main():
     direct_ok = np.allclose(U_qasm, U_expected, atol=args.atol)
     
     # Then try comparison up to global phase
-    phase_ok, phase = equal_up_to_global_phase(U_qasm, U_expected, atol=args.atol)
+    phase_ok, phase, aligned_expected = equal_up_to_global_phase(U_qasm, U_expected, atol=args.atol)
+
+    # Always print the best-aligned expected matrix for comparison
+    print("Best-aligned expected matrix (phase * expected, rounded to 6 decimals):")
+    print(np.round(aligned_expected, 6))
+    print()
 
     # Print results
     print(f"QASM file: {args.qasm_file}")
@@ -153,10 +162,12 @@ def main():
     print(f"allclose (up to global phase): {phase_ok}")
     if phase_ok and not direct_ok:
         print(f"Estimated global phase factor: {phase}")
+    elif not direct_ok:
+        print(f"Best phase factor found: {phase} (but matrices still don't match within tolerance)")
 
     # Show max error
     if phase_ok:
-        err = np.max(np.abs(U_qasm - phase * U_expected))
+        err = np.max(np.abs(U_qasm - aligned_expected))
         print(f"Max |Δ| after phase alignment: {err:.3e}")
     else:
         err = np.max(np.abs(U_qasm - U_expected))
