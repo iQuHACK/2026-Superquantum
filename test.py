@@ -54,7 +54,7 @@ def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[b
 def parse_unitary_id_from_filename(path: str) -> int:
     """
     Extracts an integer id from filenames like:
-      unitary1.qasm, unitary2.qasm, my_unitary_12.qasm, etc.
+    unitary1.qasm, unitary2.qasm, my_unitary_12.qasm, etc.
     If you prefer explicit ids, pass --id instead.
     """
     base = os.path.basename(path)
