@@ -52,22 +52,22 @@ def _apply_gate(qc: QuantumCircuit, g: str, i: int, *, dagger: bool) -> None:
         return
 
     # pick T vs Tdg primitive based on dagger flag
-    def T1():
+    def Rzhalf():
         qc.tdg(i) if dagger else qc.t(i)
 
     if g_up == "T":
-        T1()
+        Rzhalf()
         return
 
     if g_up == "S":
         # S = T^2 ; S† = (T†)^2
-        T1(); T1()
+        Rzhalf(); Rzhalf()
         return
 
     if g_up == "X":
         # X = H Z H, and Z = T^4 ; X† = X
         qc.h(i)
-        T1(); T1(); T1(); T1()
+        Rzhalf(); Rzhalf(); Rzhalf(); Rzhalf()
         qc.h(i)
         return
 
@@ -112,7 +112,7 @@ def gates_to_qiskit_lines(gates: GateSeq, i: int, *, reverse: bool = False) -> L
 
     lines: List[str] = []
 
-    def Tline():
+    def Rzhalf():
         lines.append(f"qc.tdg({i})" if dagger else f"qc.t({i})")
 
     for g in ordered:
@@ -120,29 +120,12 @@ def gates_to_qiskit_lines(gates: GateSeq, i: int, *, reverse: bool = False) -> L
         if gu == "H":
             lines.append(f"qc.h({i})")
         elif gu == "T":
-            Tline()
+            Rzhalf()
         elif gu == "S":
-            Tline(); Tline()
+            Rzhalf(); Rzhalf()
         elif gu == "X":
             lines.append(f"qc.h({i})")
-            Tline(); Tline(); Tline(); Tline()
+            Rzhalf(); Rzhalf(); Rzhalf(); Rzhalf()
             lines.append(f"qc.h({i})")
 
     return lines
-
-
-# --- quick demo ---
-if __name__ == "__main__":
-    seq = "H T S X"
-
-    print("Default (RIGHT->LEFT, non-dagger):")
-    for line in gates_to_qiskit_lines(seq, i=0, reverse=False):
-        print(line)
-
-    print("\nReverse=True (LEFT->RIGHT, dagger):")
-    for line in gates_to_qiskit_lines(seq, i=0, reverse=True):
-        print(line)
-
-    qc = gates_to_qiskit_circuit(seq, i=0, reverse=False)
-    print("\nCircuit:")
-    print(qc.draw())
