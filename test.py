@@ -5,11 +5,7 @@ import numpy as np
 
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator
-
-# If QuantumCircuit.from_qasm_file isn't available / breaks in your environment,
-# we'll fall back to qiskit_qasm2.
-from qiskit import QuantumCircuit
-import qiskit_qasm3
+from qiskit.qasm3 import loads
 
 def load_qasm_circuit(path: str) -> QuantumCircuit:
     """
@@ -19,7 +15,7 @@ def load_qasm_circuit(path: str) -> QuantumCircuit:
     with open(path, "r", encoding="utf-8") as f:
         qasm3_src = f.read()
 
-    qc = qiskit_qasm3.loads(qasm3_src)
+    qc = loads(qasm3_src)
     return qc
 
 
