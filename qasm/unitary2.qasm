@@ -81,7 +81,7 @@ gate _circuit_48 _gate_q_0 {
   sdg _gate_q_0;
 }
 qubit[2] q;
-_circuit_42 q[1];
-cx q[0], q[1];
-_circuit_48 q[1];
-cx q[0], q[1];
+_circuit_42 q[0];
+cx q[1], q[0];
+_circuit_48 q[0];
+cx q[1], q[0];

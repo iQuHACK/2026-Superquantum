@@ -28,10 +28,10 @@ def run_optimization(unitary_id, theta):
         qc = QuantumCircuit(2)
 
         if unitary_id == 2:
-            qc.append(Ry(theta/2, eps).to_gate(), [1])
-            qc.cx(0, 1)
-            qc.append(Ry(-theta/2, eps).to_gate(), [1])
-            qc.cx(0, 1)
+            qc.append(Ry(theta/2, eps).to_gate(), [0]) 
+            qc.cx(1, 0)
+            qc.append(Ry(-theta/2, eps).to_gate(), [0])
+            qc.cx(1, 0)
 
         elif unitary_id == 3:
             qc.cx(0, 1)
@@ -89,4 +89,4 @@ def run_optimization(unitary_id, theta):
 
 if __name__ == "__main__":
     # change to run w diff unitarys
-    run_optimization(7, math.pi/7)
+    run_optimization(2, math.pi/7)
