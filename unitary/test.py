@@ -29,7 +29,7 @@ def little_endian_to_big_endian(U: np.ndarray) -> np.ndarray:
                   [0, 0, 1, 0],
                   [0, 1, 0, 0],
                   [0, 0, 0, 1]])
-    return P @ U @ P
+    return (P @ U @ P).T
 
 def load_qasm_circuit(path: str) -> QuantumCircuit:
     """
