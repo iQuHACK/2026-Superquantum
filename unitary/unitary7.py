@@ -2,6 +2,7 @@ import numpy as np
 from qiskit import QuantumCircuit, transpile
 from qiskit.quantum_info import Statevector, Operator, state_fidelity
 from qiskit.circuit.library import UnitaryGate
+from qiskit.qasm3 import dumps as dumps3
 
 
 # ============================================================
@@ -90,6 +91,10 @@ for seed in range(100):
 
 print("\nBest circuit (T-count, depth):", best_score)
 print(best)
+
+qasm3_str = dumps3(best)
+with open("qasm/unitary7.qasm", "w") as file:
+    file.write(qasm3_str)
 
 
 # ============================================================

@@ -16,6 +16,31 @@ RX = lambda theta: np.array([[np.cos(theta/2), -1j*np.sin(theta/2)], [-1j*np.sin
 RY = lambda theta: np.array([[np.cos(theta/2), -np.sin(theta/2)], [np.sin(theta/2), np.cos(theta/2)]])
 RZ = lambda theta: np.array([[np.exp(-1j*theta/2), 0], [0, np.exp(1j*theta/2)]])
 
+def unitary_from_state(state: np.ndarray) -> np.ndarray:
+    state = np.asarray(state, dtype=complex).reshape(-1)
+    norm = np.linalg.norm(state)
+    if norm == 0:
+        raise ValueError("State vector must be non-zero.")
+    state = state / norm
+
+    basis = [state]
+    dim = state.size
+    for i in range(dim):
+        v = np.zeros(dim, dtype=complex)
+        v[i] = 1.0
+        for b in basis:
+            v = v - np.vdot(b, v) * b
+        v_norm = np.linalg.norm(v)
+        if v_norm > 1e-12:
+            basis.append(v / v_norm)
+        if len(basis) == dim:
+            break
+
+    if len(basis) != dim:
+        raise ValueError("Failed to construct a full orthonormal basis.")
+
+    return np.column_stack(basis)
+
 expected = {
     1: np.block([
         [np.eye(2), np.zeros((2,2))],
@@ -28,7 +53,13 @@ expected = {
     3: scipy.linalg.expm(1j*np.pi/7*(np.kron(Z,Z))),
     4: scipy.linalg.expm(1j*np.pi/7*(np.kron(X,X)+np.kron(Y,Y))),
     5: scipy.linalg.expm(1j*np.pi/4*(np.kron(X,X)+np.kron(Y,Y)+np.kron(Z,Z))),
-    6: scipy.linalg.expm(1j*np.pi/7*(np.kron(X,X)+np.kron(Z,np.eye(2))+np.kron(np.eye(2),Z)))
+    6: scipy.linalg.expm(1j*np.pi/7*(np.kron(X,X)+np.kron(Z,np.eye(2))+np.kron(np.eye(2),Z))),
+    7: unitary_from_state(np.array([
+        0.1061479384 - 0.679641467j,
+        -0.3622775887 - 0.453613136j,
+        0.2614190429 + 0.0445330969j,
+        0.3276449279 - 0.1101628411j,
+    ], dtype=complex))
 }
 
 def load_qasm_circuit(path: str) -> tuple[QuantumCircuit, str]:
