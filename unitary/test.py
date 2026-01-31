@@ -7,6 +7,18 @@ from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator
 from qiskit.qasm3 import loads
 
+# ---- 1) Define / load your expected matrices here ----
+# Example placeholder dictionary. Replace with your real matrices.
+# Each entry must be a (2**n x 2**n) complex numpy array.
+expected = {
+    1: np.array([
+        [1, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 0, -1j],
+        [0, 0, 1j, 0]
+    ])
+}
+
 def load_qasm_circuit(path: str) -> QuantumCircuit:
     """
     Load an OpenQASM 3 file into a Qiskit QuantumCircuit.
@@ -72,14 +84,6 @@ def main():
     args = parser.parse_args()
 
     unitary_id = args.id if args.id is not None else parse_unitary_id_from_filename(args.qasm_file)
-
-    # ---- 1) Define / load your expected matrices here ----
-    # Example placeholder dictionary. Replace with your real matrices.
-    # Each entry must be a (2**n x 2**n) complex numpy array.
-    expected = {
-        1: np.eye(4, dtype=complex),
-    }
-
 
     if unitary_id not in expected:
         raise KeyError(
