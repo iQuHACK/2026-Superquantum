@@ -51,25 +51,11 @@ def load_qasm_circuit(path: str) -> tuple[QuantumCircuit, str]:
 def circuit_unitary(qc: QuantumCircuit) -> np.ndarray:
     return Operator(qc).data
 
-def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[bool, complex, np.ndarray]:
-    if U.shape != V.shape:
-        return False, 1.0 + 0.0j, V
-
-    mask = (np.abs(V) > atol) & (np.abs(U) > atol)
-
-    if not np.any(mask):
-        if np.allclose(U, 0, atol=atol) and np.allclose(V, 0, atol=atol):
-            return True, 1.0 + 0.0j, V
-        return False, 1.0 + 0.0j, V
-
-    raw_ratios = U[mask] / V[mask]
-
-    candidates = raw_ratios / np.abs(raw_ratios)
-
+def distance_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> np.ndarray:
     best_phase = 1.0 + 0.0j
     min_dist = float('inf')
 
-    for phase in candidates:
+    for phase in np.arange():
         dist = np.linalg.norm(U - (phase * V))
         
         if dist < min_dist:
@@ -79,8 +65,7 @@ def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[b
     print(f"Best phase found: {best_phase:.4f} (Distance: {min_dist:.2e})")
     aligned_matrix = best_phase * V
     
-    is_equal = np.allclose(U, aligned_matrix, atol=atol)
-    return is_equal, best_phase, aligned_matrix
+    return aligned_matrix
 
 
 def parse_unitary_id_from_filename(path: str) -> int:
@@ -114,7 +99,7 @@ def main():
 
     U_expected = np.asarray(expected[unitary_id], dtype=complex)
 
-    qc, qasm_src = load_qasm_circuit(args.qasm_file)
+    qc, _ = load_qasm_circuit(args.qasm_file)
 
     if qc.num_clbits > 0:
         inst_names = [inst.operation.name for inst in qc.data]
@@ -135,21 +120,14 @@ def main():
             f"QASM qubits: {qc.num_qubits} -> expected dimension {2**qc.num_qubits}"
         )
 
-    direct_ok = np.allclose(U_qasm, U_expected, atol=args.atol)
-    
-    phase_ok, phase, aligned_expected = equal_up_to_global_phase(U_qasm, U_expected, atol=args.atol)
+    aligned = distance_global_phase(U_expected, U_qasm, atol=args.atol)
 
-    print("Best-aligned expected matrix (phase * expected, rounded to 6 decimals):")
-    print(np.round(aligned_expected, 6))
+    print("Best-aligned actual matrix (phase * actual, rounded to 6 decimals):")
+    print(np.round(aligned, 6))
     print()
 
-    # Show max error
-    if phase_ok:
-        err = np.max(np.abs(U_qasm - aligned_expected))
-        print(f"Max |Δ| after phase alignment: {err:.3e}")
-    else:
-        err = np.max(np.abs(U_qasm - U_expected))
-        print(f"Max |Δ| (no phase alignment): {err:.3e}")
+    err = np.max(np.abs(U_expected - aligned))
+    print(f"Max |Δ|: {err:.3e}")
 
     # print t gate count
     t_count = count_t_gates(qc)
