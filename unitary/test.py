@@ -40,13 +40,12 @@ expected = {
     ])
 }
 
-def load_qasm_circuit(path: str) -> tuple[QuantumCircuit, str]:
-    with open(path, "r", encoding="utf-8") as f:
+def load_qasm_circuit(path: str) -> QuantumCircuit:
+    with open(path, "r") as f:
         qasm3_src = f.read()
 
     qc = loads(qasm3_src)
     return qc, qasm3_src
-
 
 def circuit_unitary(qc: QuantumCircuit) -> np.ndarray:
     return Operator(qc).data
