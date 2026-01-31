@@ -7,9 +7,6 @@ from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator
 from qiskit.qasm3 import loads
 
-# ---- 1) Define / load your expected matrices here ----
-# Example placeholder dictionary. Replace with your real matrices.
-# Each entry must be a (2**n x 2**n) complex numpy array.
 expected = {
     1: np.array([
         [1, 0, 0, 0],
@@ -41,11 +38,6 @@ expected = {
 }
 
 def load_qasm_circuit(path: str) -> tuple[QuantumCircuit, str]:
-    """
-    Load an OpenQASM 3 file into a Qiskit QuantumCircuit.
-    Returns both the circuit and the original QASM source.
-    """
-
     with open(path, "r", encoding="utf-8") as f:
         qasm3_src = f.read()
 
@@ -54,15 +46,9 @@ def load_qasm_circuit(path: str) -> tuple[QuantumCircuit, str]:
 
 
 def circuit_unitary(qc: QuantumCircuit) -> np.ndarray:
-    # Operator(qc) constructs the full unitary for circuits with no measurement/reset.
     return Operator(qc).data
 
 def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[bool, complex, np.ndarray]:
-    """
-    Returns (is_equal, phase_factor, aligned_matrix) where:
-    - phase_factor is a complex scalar e^{iθ} such that U ≈ phase_factor * V
-    - aligned_matrix is phase_factor * V (the best-aligned version of V)
-    """
     if U.shape != V.shape:
         return False, 1.0 + 0.0j, V
 
@@ -88,21 +74,13 @@ def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[b
             best_phase = phase
 
     print(f"Best phase found: {best_phase:.4f} (Distance: {min_dist:.2e})")
-
-    # Calculate the best-aligned matrix
     aligned_matrix = best_phase * V
     
-    # Final strict check using the best phase found
     is_equal = np.allclose(U, aligned_matrix, atol=atol)
     return is_equal, best_phase, aligned_matrix
 
 
 def parse_unitary_id_from_filename(path: str) -> int:
-    """
-    Extracts an integer id from filenames like:
-    unitary1.qasm, unitary2.qasm, my_unitary_12.qasm, etc.
-    If you prefer explicit ids, pass --id instead.
-    """
     base = os.path.basename(path)
     m = re.search(r"(\d+)", base)
     if not m:
@@ -110,14 +88,7 @@ def parse_unitary_id_from_filename(path: str) -> int:
     return int(m.group(1))
 
 def count_t_gates(qc: QuantumCircuit) -> int:
-    """
-    Decomposes custom gates and counts all 't' and 'tdg' gates accurately.
-    """
-    # Use decompose to unroll custom 'gate' definitions into standard gates
     decomposed_qc = qc.decompose()
-    
-    # In case of nested definitions, you might need multiple passes or 
-    # use the transpiler to unroll to a specific basis
     ops = decomposed_qc.count_ops()
     
     t_count = ops.get("t", 0) + ops.get("tdg", 0)
@@ -140,17 +111,13 @@ def main():
 
     U_expected = np.asarray(expected[unitary_id], dtype=complex)
 
-    # ---- 2) Load QASM -> circuit ----
     qc, qasm_src = load_qasm_circuit(args.qasm_file)
 
-    # Guardrail: Operator needs unitary-only circuit (no measurements/resets)
     if qc.num_clbits > 0:
-        # Measurements can exist even if clbits are unused; check instructions.
         inst_names = [inst.operation.name for inst in qc.data]
         if "measure" in inst_names or "reset" in inst_names:
             raise ValueError("Circuit contains measure/reset; cannot form a single unitary Operator.")
 
-    # ---- 3) Circuit -> unitary ----
     U_qasm = circuit_unitary(qc).T
     
     print("Expected matrix:")
@@ -160,7 +127,6 @@ def main():
     print(np.round(U_qasm, 6))
     print()
 
-    # ---- 4) Sanity: dimensions match ----
     if U_qasm.shape != U_expected.shape:
         raise ValueError(
             f"Shape mismatch:\n"
@@ -169,14 +135,10 @@ def main():
             f"QASM qubits: {qc.num_qubits} -> expected dimension {2**qc.num_qubits}"
         )
 
-    # ---- 5) Compare matrices ----
-    # First try direct comparison
     direct_ok = np.allclose(U_qasm, U_expected, atol=args.atol)
     
-    # Then try comparison up to global phase
     phase_ok, phase, aligned_expected = equal_up_to_global_phase(U_qasm, U_expected, atol=args.atol)
 
-    # Always print the best-aligned expected matrix for comparison
     print("Best-aligned expected matrix (phase * expected, rounded to 6 decimals):")
     print(np.round(aligned_expected, 6))
     print()
