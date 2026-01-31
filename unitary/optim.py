@@ -5,6 +5,7 @@ from qiskit.quantum_info import Operator
 from qiskit.qasm3 import dumps as dumps3
 
 from utils import Ry
+from utils import Rz
 from test import count_t_gates_manual, distance_global_phase, expected as EXPECTED_DICT
 
 def run_optimization(unitary_id, theta):
@@ -24,10 +25,20 @@ def run_optimization(unitary_id, theta):
     for eps in epsilons:
         qc = QuantumCircuit(2)
         
-        qc.append(Ry(theta/2, eps).to_gate(), [1])
-        qc.cx(0, 1)
-        qc.append(Ry(-theta/2, eps).to_gate(), [1])
-        qc.cx(0, 1)
+        if unitary_id == 2:
+        
+            qc.append(Ry(theta/2, eps).to_gate(), [1])
+            qc.cx(0, 1)
+            qc.append(Ry(-theta/2, eps).to_gate(), [1])
+            qc.cx(0, 1)
+        
+        elif unitary_id == 3:
+            
+            qc.cx(0, 1)
+            qc.append(Rz(-2*theta, eps).to_gate(), [1])
+            qc.cx(0, 1)
+        
+        #etc for others
         
         qasm_str = dumps3(qc)
 
