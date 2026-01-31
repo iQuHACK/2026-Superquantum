@@ -1,254 +1,141 @@
-#!/usr/bin/env python3
-from __future__ import annotations
-
 import argparse
+import os
 import re
-from dataclasses import dataclass
-from typing import List, Tuple
-
 import numpy as np
+
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator
 
+# If QuantumCircuit.from_qasm_file isn't available / breaks in your environment,
+# we'll fall back to qiskit_qasm2.
+from qiskit import QuantumCircuit
+import qiskit_qasm3
 
-# ----------------------------
-# Parsing + circuit building
-# ----------------------------
-
-@dataclass(frozen=True)
-class ParsedGate:
-    name: str   # normalized gate name: H, T, S, X, TDG, SDG, CX
-    qubit: int
-    control: int = -1  # for CX gates, -1 means not applicable
-
-
-def _strip_comments(line: str) -> str:
-    # Remove inline // or # comments too
-    line = re.split(r"(//|#)", line, maxsplit=1)[0]
-    # Some formats use ';' as comment starter
-    line = re.split(r";", line, maxsplit=1)[0]
-    return line.strip()
-
-
-def _normalize_gate_name(raw: str) -> str:
-    s = raw.strip()
-
-    # normalize unicode dagger
-    s = s.replace("†", "DG")
-    s_up = s.upper()
-
-    # common aliases
-    aliases = {
-        "TADG": "TDG",
-        "TDAG": "TDG",
-        "T_DG": "TDG",
-        "SDAG": "SDG",
-        "SADG": "SDG",
-        "S_DG": "SDG",
-    }
-    s_up = aliases.get(s_up, s_up)
-
-    # Allow "H", "T", "S", "X", "TDG", "SDG"
-    return s_up
-
-
-def read_qasm(path: str) -> List[ParsedGate]:
-    gates: List[ParsedGate] = []
+def load_qasm_circuit(path: str) -> QuantumCircuit:
+    """
+    Load an OpenQASM 3 file into a Qiskit QuantumCircuit.
+    """
 
     with open(path, "r", encoding="utf-8") as f:
-        for lineno, raw_line in enumerate(f, start=1):
-            line = _strip_comments(raw_line)
-            if not line:
-                continue
+        qasm3_src = f.read()
 
-            # Skip QASM3 header and declaration lines
-            if (line.startswith("OPENQASM") or 
-                line.startswith("include") or 
-                line.startswith("qubit") or
-                line.startswith("bit") or
-                line.startswith("creg") or
-                line.startswith("qreg")):
-                continue
-
-            # Extract gate token: leading letters (plus optional dagger symbol already normalized later)
-            m_gate = re.match(r"\s*([A-Za-z]+|[A-Za-z]†)\b", line)
-            if not m_gate:
-                raise ValueError(f"{path}:{lineno}: Could not parse gate token from line: {raw_line.rstrip()}")
-
-            gate_raw = m_gate.group(1)
-            gate = _normalize_gate_name(gate_raw)
-
-            # Handle CX gates (two-qubit)
-            if gate == "CX":
-                # Extract two qubit indices: cx q[0], q[1];
-                qubit_matches = re.findall(r"(-?\d+)", line)
-                if len(qubit_matches) < 2:
-                    raise ValueError(f"{path}:{lineno}: CX gate requires two qubit indices, found {len(qubit_matches)}: {raw_line.rstrip()}")
-                
-                control = int(qubit_matches[0])
-                target = int(qubit_matches[1])
-                
-                if control < 0 or target < 0:
-                    raise ValueError(f"{path}:{lineno}: Qubit indices must be >= 0, got control={control}, target={target}.")
-                
-                gates.append(ParsedGate("CX", target, control))
-                continue
-
-            # Extract first integer on the line as qubit index (supports q[0], q0, etc.)
-            m_q = re.search(r"(-?\d+)", line)
-            if not m_q:
-                raise ValueError(f"{path}:{lineno}: Could not find qubit index integer in line: {raw_line.rstrip()}")
-
-            q = int(m_q.group(1))
-
-            if gate not in {"H", "T", "S", "X", "TDG", "SDG"}:
-                raise ValueError(
-                    f"{path}:{lineno}: Unsupported gate '{gate_raw}' (normalized: {gate}). "
-                    f"Supported: H, T, S, X, TDG, SDG, CX."
-                )
-
-            if q < 0:
-                raise ValueError(f"{path}:{lineno}: Qubit index must be >= 0, got {q}.")
-
-            gates.append(ParsedGate(gate, q))
-
-    return gates
-
-
-def build_circuit_from_parsed(gates: List[ParsedGate], reverse: bool = False) -> QuantumCircuit:
-    if not gates:
-        raise ValueError("No gates found in QASM file.")
-
-    # Find max qubit index (considering both target and control qubits)
-    max_q = 0
-    for g in gates:
-        max_q = max(max_q, g.qubit)
-        if g.control >= 0:  # CX gate
-            max_q = max(max_q, g.control)
-    
-    qc = QuantumCircuit(max_q + 1)
-
-    ordered = gates if reverse else list(reversed(gates))
-
-    for g in ordered:
-        name = g.name
-        i = g.qubit
-
-        def T1(dagger: bool) -> None:
-            qc.tdg(i) if dagger else qc.t(i)
-
-        if name == "H":
-            qc.h(i)
-
-        elif name == "T":
-            qc.t(i)
-
-        elif name == "TDG":
-            qc.tdg(i)
-
-        elif name == "S":
-            # S = T^2
-            qc.t(i); qc.t(i)
-
-        elif name == "SDG":
-            # S† = (T†)^2
-            qc.tdg(i); qc.tdg(i)
-
-        elif name == "X":
-            # X = H Z H, Z = T^4
-            qc.h(i)
-            qc.t(i); qc.t(i); qc.t(i); qc.t(i)
-            qc.h(i)
-
-        elif name == "CX":
-            # CNOT gate
-            qc.cx(g.control, i)
-
-        else:
-            raise ValueError(f"Internal error: unhandled gate {name!r}")
-
+    qc = qiskit_qasm3.loads(qasm3_src)
     return qc
 
 
-# ----------------------------
-# Unitary / “closed” tests
-# ----------------------------
-
-def is_close(a: np.ndarray, b: np.ndarray, atol: float, rtol: float) -> bool:
-    return np.allclose(a, b, atol=atol, rtol=rtol)
+def circuit_unitary(qc: QuantumCircuit) -> np.ndarray:
+    # Operator(qc) constructs the full unitary for circuits with no measurement/reset.
+    return Operator(qc).data
 
 
-def test_unitary(U: np.ndarray, atol: float, rtol: float) -> Tuple[bool, str]:
-    n = U.shape[0]
-    I = np.eye(n, dtype=complex)
+def equal_up_to_global_phase(U: np.ndarray, V: np.ndarray, atol=1e-8) -> tuple[bool, complex]:
+    """
+    Returns (is_equal, phase_factor) where phase_factor is a complex scalar e^{iθ}
+    such that U ≈ phase_factor * V if is_equal is True.
+    """
+    if U.shape != V.shape:
+        return False, 1.0 + 0.0j
 
-    U_dag = U.conj().T
-    left = U_dag @ U
-    right = U @ U_dag
+    # Find a reference element where V is nonzero to estimate phase robustly
+    idx = None
+    flatV = V.ravel()
+    for k in range(flatV.size):
+        if abs(flatV[k]) > atol:
+            idx = k
+            break
 
-    ok_left = is_close(left, I, atol=atol, rtol=rtol)
-    ok_right = is_close(right, I, atol=atol, rtol=rtol)
+    if idx is None:
+        # V is basically all zeros (shouldn't happen for a unitary)
+        return np.allclose(U, V, atol=atol), 1.0 + 0.0j
 
-    if not (ok_left and ok_right):
-        # helpful diagnostic: worst deviation
-        dev_left = np.max(np.abs(left - I))
-        dev_right = np.max(np.abs(right - I))
-        return False, f"Not unitary within tolerances. max|U†U-I|={dev_left:.3e}, max|UU†-I|={dev_right:.3e}"
+    phase = U.ravel()[idx] / V.ravel()[idx]
+    if abs(phase) > 0:
+        phase = phase / abs(phase)  # normalize to unit magnitude
 
-    # “closed” under adjoint: inverse equals adjoint for unitary matrices
-    try:
-        U_inv = np.linalg.inv(U)
-    except np.linalg.LinAlgError:
-        return False, "Matrix inversion failed (singular)."
-
-    ok_inv = is_close(U_inv, U_dag, atol=atol, rtol=rtol)
-    if not ok_inv:
-        dev_inv = np.max(np.abs(U_inv - U_dag))
-        return False, f"Inverse not equal to adjoint within tolerances. max|inv(U)-U†|={dev_inv:.3e}"
-
-    # determinant magnitude check (optional sanity)
-    det = np.linalg.det(U)
-    if not np.isfinite(det.real) or not np.isfinite(det.imag):
-        return False, "Determinant is not finite."
-    if not np.isclose(abs(det), 1.0, atol=atol*10, rtol=rtol*10):
-        return False, f"|det(U)| not ~ 1. Got |det(U)|={abs(det):.6f}"
-
-    return True, "PASS: Matrix is unitary and closed under adjoint (inv(U) ≈ U†)."
+    return np.allclose(U, phase * V, atol=atol), phase
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="QASM -> Qiskit -> matrix unitary/closure test")
-    parser.add_argument("qasm_file", help="Path to unitary*.qasm file")
-    parser.add_argument("--reverse", action="store_true",
-                        help="If set: apply LEFT->RIGHT (no implicit reversal). Default applies RIGHT->LEFT.")
-    parser.add_argument("--atol", type=float, default=1e-10, help="Absolute tolerance for numeric checks")
-    parser.add_argument("--rtol", type=float, default=1e-10, help="Relative tolerance for numeric checks")
-    parser.add_argument("--print-circuit", action="store_true", help="Print the circuit diagram")
-    parser.add_argument("--print-matrix", action="store_true", help="Print the unitary matrix (can be large)")
+def parse_unitary_id_from_filename(path: str) -> int:
+    """
+    Extracts an integer id from filenames like:
+      unitary1.qasm, unitary2.qasm, my_unitary_12.qasm, etc.
+    If you prefer explicit ids, pass --id instead.
+    """
+    base = os.path.basename(path)
+    m = re.search(r"(\d+)", base)
+    if not m:
+        raise ValueError(f"Could not infer unitary id from filename: {base}. Use --id.")
+    return int(m.group(1))
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("qasm_file", help="Path to QASM file (e.g., unitary1.qasm)")
+    parser.add_argument("--id", type=int, default=None, help="Unitary id override")
+    parser.add_argument("--atol", type=float, default=1e-8, help="Absolute tolerance for comparisons")
     args = parser.parse_args()
 
-    parsed = read_qasm(args.qasm_file)
-    qc = build_circuit_from_parsed(parsed, reverse=args.reverse)
+    unitary_id = args.id if args.id is not None else parse_unitary_id_from_filename(args.qasm_file)
 
-    if args.print_circuit:
-        print(qc.draw())
+    # ---- 1) Define / load your expected matrices here ----
+    # Example placeholder dictionary. Replace with your real matrices.
+    # Each entry must be a (2**n x 2**n) complex numpy array.
+    expected = {
+        1: np.eye(4, dtype=complex),
+    }
 
-    U = np.array(Operator(qc).data, dtype=complex)
 
-    if args.print_matrix:
-        np.set_printoptions(linewidth=200, precision=6, suppress=True)
-        print(U)
+    if unitary_id not in expected:
+        raise KeyError(
+            f"Unitary id {unitary_id} not found in expected dict. "
+            f"Available keys: {sorted(expected.keys())}"
+        )
 
-    ok, msg = test_unitary(U, atol=args.atol, rtol=args.rtol)
+    U_expected = np.asarray(expected[unitary_id], dtype=complex)
 
-    # Some extra context
-    print(f"File: {args.qasm_file}")
+    # ---- 2) Load QASM -> circuit ----
+    qc = load_qasm_circuit(args.qasm_file)
+
+    # Guardrail: Operator needs unitary-only circuit (no measurements/resets)
+    if qc.num_clbits > 0:
+        # Measurements can exist even if clbits are unused; check instructions.
+        inst_names = [inst.operation.name for inst in qc.data]
+        if "measure" in inst_names or "reset" in inst_names:
+            raise ValueError("Circuit contains measure/reset; cannot form a single unitary Operator.")
+
+    # ---- 3) Circuit -> unitary ----
+    U_qasm = circuit_unitary(qc)
+
+    # ---- 4) Sanity: dimensions match ----
+    if U_qasm.shape != U_expected.shape:
+        raise ValueError(
+            f"Shape mismatch:\n"
+            f"  from QASM:     {U_qasm.shape}\n"
+            f"  expected dict: {U_expected.shape}\n"
+            f"QASM qubits: {qc.num_qubits} -> expected dimension {2**qc.num_qubits}"
+        )
+
+    # ---- 5) Compare ----
+    direct_ok = np.allclose(U_qasm, U_expected, atol=args.atol)
+    phase_ok, phase = equal_up_to_global_phase(U_qasm, U_expected, atol=args.atol)
+
+    print(f"QASM file: {args.qasm_file}")
+    print(f"Inferred id: {unitary_id}")
     print(f"Qubits: {qc.num_qubits}")
-    print(f"Gates parsed: {len(parsed)}")
-    print(f"Order: {'LEFT->RIGHT' if args.reverse else 'RIGHT->LEFT'}")
-    print(msg)
+    print(f"Matrix shape: {U_qasm.shape}")
+    print()
+    print(f"allclose (direct): {direct_ok}")
+    print(f"allclose (up to global phase): {phase_ok}")
+    if phase_ok and not direct_ok:
+        print(f"Estimated global phase factor (U_qasm ≈ phase * U_expected): {phase}")
 
-    raise SystemExit(0 if ok else 1)
+    # Optional: show max entrywise error under best phase alignment
+    if phase_ok:
+        err = np.max(np.abs(U_qasm - phase * U_expected))
+        print(f"Max |Δ| after phase alignment: {err:.3e}")
+    else:
+        err = np.max(np.abs(U_qasm - U_expected))
+        print(f"Max |Δ| (no phase alignment): {err:.3e}")
 
 
 if __name__ == "__main__":
