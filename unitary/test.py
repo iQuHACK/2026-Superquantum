@@ -33,7 +33,10 @@ expected = {
         [0, 0, 0, 1]
     ]),
     5: np.array([
-        
+        [np.exp(-1j*np.pi/7), 0, 0, 0],
+        [0, (np.exp(3*1j*np.pi/7)+np.exp(-1j*np.pi/7))/2, (np.exp(3*1j*np.pi/7)-np.exp(-1j*np.pi/7))/2, 0],
+        [0, (np.exp(3*1j*np.pi/7)-np.exp(-1j*np.pi/7))/2, (np.exp(3*1j*np.pi/7)+np.exp(-1j*np.pi/7))/2, 0],
+        [0, 0, 0, np.exp(-1j*np.pi/7)]
     ])
 }
 
