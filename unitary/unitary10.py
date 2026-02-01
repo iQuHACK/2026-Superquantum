@@ -20,12 +20,13 @@ import numpy as np
 
 from qiskit import QuantumCircuit, quantum_info, transpile
 from qiskit.quantum_info import Operator
+from qiskit.qasm3 import dumps as dumps3
 from qiskit.circuit.library import UnitaryGate
 
 from optim import _synthesize, normalize_angle, build_circuit, total_t_count
 
 # --- Configuration (same values as unitary10.py) ---
-ANGLE_TOL = 1e-9
+ANGLE_TOL = 1e-1
 
 TARGET_DISTANCES = [
     1e-1, 7e-2, 5e-2, 3e-2, 2e-2, 1e-2, 7e-3, 5e-3, 3e-3, 2e-3, 1e-3
@@ -97,7 +98,7 @@ def optimize_for_target(args):
             break
 
     if best_uniform_eps is None:
-        return (target_dist, False, None, None)
+        return (target_dist, False, None, None, None)
 
     # Phase 2: Per-rotation relaxation
     current_eps = [best_uniform_eps] * n_rotations
@@ -139,7 +140,8 @@ def optimize_for_target(args):
     final_t = total_t_count(ops, rotation_indices, current_eps, cache)
     final_dist = operator_distance(Operator(final_qc).data, target)
 
-    return (target_dist, True, final_t, final_dist)
+    qasm_str = dumps3(final_qc)
+    return (target_dist, True, final_t, final_dist, qasm_str)
 
 
 def main():
@@ -177,7 +179,7 @@ def main():
     with ctx.Pool(processes=args.workers) as pool:
         results = list(pool.imap_unordered(optimize_for_target, tasks, chunksize=1))
 
-    for target_dist, success, final_t, final_dist in sorted(results, key=lambda r: r[0]):
+    for target_dist, success, final_t, final_dist, qasm_str in sorted(results, key=lambda r: r[0]):
         print("\n" + "=" * 60)
         print(f"RUNNING OPTIMIZATION FOR TARGET DISTANCE: {target_dist}")
         print("=" * 60)
@@ -185,6 +187,12 @@ def main():
             print(f"Warning: Target distance {target_dist} not reachable in sweep.")
             continue
         print(f"DONE -> Target: {target_dist} | Final T: {final_t} | Final Dist: {final_dist:.6e}")
+        if qasm_str:
+            tag = f"{target_dist:.0e}".replace("+", "")
+            qasm_path = os.path.join("qasm", f"unitary10_target_{tag}.qasm")
+            with open(qasm_path, "w") as f:
+                f.write(qasm_str)
+            print(f"Saved to {qasm_path}")
 
     print("\nAll target optimizations complete.")
 

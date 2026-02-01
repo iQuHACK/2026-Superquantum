@@ -411,7 +411,7 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
 if __name__ == "__main__":
     # List all constructions you want to investigate
     # Unitaries 5, 8, 9 don't use theta parameter (fixed constructions)
-    constructions_to_analyze = [6]
+    constructions_to_analyze = [10]
     
     theta_value = math.pi / 7
     
