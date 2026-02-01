@@ -1,9 +1,16 @@
 import numpy as np
 from qiskit import QuantumCircuit, transpile
 from qiskit.quantum_info import Statevector, Operator, state_fidelity
+from qiskit.qasm3 import dumps as dumps3
+from qiskit.transpiler import PassManager
+from qiskit.transpiler.passes import (
+    CommutativeCancellation,
+    InverseCancellation,
+    Optimize1qGatesDecomposition,
+    OptimizeCliffordT,
+)
 
 from utils import Rz, Ry
-from qiskit.qasm3 import dumps as dumps3
 
 psi = np.array([
     0.1061479384 - 0.6796414670j,   # |00>
@@ -47,6 +54,89 @@ def decompose_zyz(U_in: np.ndarray) -> tuple[float, float, float, float]:
     return phase, phi_local, theta_local, lam_local
 
 
+def normalize_angle(angle: float) -> float:
+    return float((angle + np.pi) % (2 * np.pi) - np.pi)
+
+
+def quantize_angle(angle: float, quantum: float | None) -> float:
+    if quantum is None:
+        return angle
+    return float(round(angle / quantum) * quantum)
+
+
+def choose_zyz_variant(phi: float, theta: float, lam: float, tol: float) -> tuple[float, float, float]:
+    variants = [
+        (phi, theta, lam),
+        (phi + np.pi, -theta, lam + np.pi),
+    ]
+
+    best = None
+    best_cost = None
+    for v_phi, v_theta, v_lam in variants:
+        v_phi = normalize_angle(v_phi)
+        v_theta = normalize_angle(v_theta)
+        v_lam = normalize_angle(v_lam)
+        cost = sum(abs(a) for a in (v_phi, v_theta, v_lam) if abs(a) >= tol)
+        if best_cost is None or cost < best_cost:
+            best_cost = cost
+            best = (v_phi, v_theta, v_lam)
+
+    return best
+
+
+def append_rot(
+    ops: list[tuple[str, float]],
+    axis: str,
+    angle: float,
+    tol: float,
+    quantum: float | None,
+) -> None:
+    angle = normalize_angle(angle)
+    angle = normalize_angle(quantize_angle(angle, quantum))
+    if abs(angle) < tol:
+        return
+    if ops and ops[-1][0] == axis:
+        merged = normalize_angle(ops[-1][1] + angle)
+        if abs(merged) < tol:
+            ops.pop()
+        else:
+            ops[-1] = (axis, merged)
+    else:
+        ops.append((axis, angle))
+
+
+RZ_GATE_CACHE: dict[tuple[float, float], object] = {}
+RY_GATE_CACHE: dict[tuple[float, float], object] = {}
+
+
+def cached_rz(angle: float, eps: float):
+    key = (angle, eps)
+    gate = RZ_GATE_CACHE.get(key)
+    if gate is None:
+        gate = Rz(angle, eps).to_gate()
+        RZ_GATE_CACHE[key] = gate
+    return gate
+
+
+def cached_ry(angle: float, eps: float):
+    key = (angle, eps)
+    gate = RY_GATE_CACHE.get(key)
+    if gate is None:
+        gate = Ry(angle, eps).to_gate()
+        RY_GATE_CACHE[key] = gate
+    return gate
+
+
+def apply_rotations(qc: QuantumCircuit, qubit: int, ops: list[tuple[str, float]], eps: float) -> None:
+    for axis, angle in ops:
+        if axis == "z":
+            qc.append(cached_rz(angle, eps), [qubit])
+        elif axis == "y":
+            qc.append(cached_ry(angle, eps), [qubit])
+        else:
+            raise ValueError(f"Unsupported axis {axis}")
+
+
 def append_zyz(qc: QuantumCircuit, qubit: int, phi: float, theta: float, lam: float, eps: float) -> None:
     if not np.isclose(phi, 0.0, atol=1e-12):
         qc.append(Rz(phi, eps).to_gate(), [qubit])
@@ -61,14 +151,28 @@ def build_approx_circuit(
     theta_in: float,
     u_angles: tuple[float, float, float],
     v_angles: tuple[float, float, float],
+    angle_tol: float,
+    angle_quantum: float | None,
 ) -> QuantumCircuit:
     qc_local = QuantumCircuit(2)
 
-    qc_local.append(Ry(theta_in, eps).to_gate(), [1])
-    qc_local.cx(1, 0)
+    pre_q1: list[tuple[str, float]] = []
+    post_q1: list[tuple[str, float]] = []
+    post_q0: list[tuple[str, float]] = []
 
-    append_zyz(qc_local, 1, *u_angles, eps=eps)
-    append_zyz(qc_local, 0, *v_angles, eps=eps)
+    append_rot(pre_q1, "y", theta_in, angle_tol, angle_quantum)
+    append_rot(post_q1, "z", u_angles[0], angle_tol, angle_quantum)
+    append_rot(post_q1, "y", u_angles[1], angle_tol, angle_quantum)
+    append_rot(post_q1, "z", u_angles[2], angle_tol, angle_quantum)
+
+    append_rot(post_q0, "z", v_angles[0], angle_tol, angle_quantum)
+    append_rot(post_q0, "y", v_angles[1], angle_tol, angle_quantum)
+    append_rot(post_q0, "z", v_angles[2], angle_tol, angle_quantum)
+
+    apply_rotations(qc_local, 1, pre_q1, eps)
+    qc_local.cx(1, 0)
+    apply_rotations(qc_local, 1, post_q1, eps)
+    apply_rotations(qc_local, 0, post_q0, eps)
 
     return qc_local
 
@@ -79,8 +183,6 @@ def build_approx_circuit(
 
 _, u_phi, u_theta, u_lam = decompose_zyz(U)
 _, v_phi, v_theta, v_lam = decompose_zyz(V_star)
-u_angles = (u_phi, u_theta, u_lam)
-v_angles = (v_phi, v_theta, v_lam)
 
 
 # ============================================================
@@ -90,9 +192,29 @@ v_angles = (v_phi, v_theta, v_lam)
 basis_gates = ["h", "cx", "s", "sdg", "t", "tdg"]
 max_total_gates = 10_000
 target_fidelity = 0.97
-epsilon_coarse = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7]
-refine_steps = 5
+fast_approx = True
+angle_prune_tol = 1e-3 if fast_approx else 1e-4
+angle_quantum = 1e-3 if fast_approx else None
+epsilon_coarse = [
+    1e-1, 5e-2, 2e-2, 1e-2,
+    5e-3, 2e-3, 1e-3,
+    5e-4, 2e-4, 1e-4,
+    5e-5, 2e-5, 1e-5,
+    5e-6, 2e-6, 1e-6,
+    5e-7, 2e-7, 1e-7,
+]
+refine_steps = 9
 num_seeds = 100
+use_post_passes = True
+post_passes = PassManager(
+    [
+        Optimize1qGatesDecomposition(["h", "s", "sdg", "t", "tdg"]),
+        OptimizeCliffordT(),
+        CommutativeCancellation(),
+        InverseCancellation(),
+    ]
+)
+early_gatecap_seeds = 5
 
 best = None
 best_score = None
@@ -101,14 +223,16 @@ selected_eps = None
 min_total_gates = None
 max_fid_overall = None
 
-def evaluate_epsilon(eps: float) -> dict:
+def evaluate_epsilon(eps: float, u_angles: tuple[float, float, float], v_angles: tuple[float, float, float]) -> dict:
     candidate_best = None
     candidate_score = None
     candidate_fid = None
     candidate_min_total = None
     max_fid_eps = None
+    gatecap_checks = 0
+    gatecap_hits = 0
 
-    base_qc = build_approx_circuit(eps, theta, u_angles, v_angles)
+    base_qc = build_approx_circuit(eps, theta, u_angles, v_angles, angle_prune_tol, angle_quantum)
     print(f"\nEpsilon {eps:.1e}")
 
     for seed in range(num_seeds):
@@ -118,6 +242,8 @@ def evaluate_epsilon(eps: float) -> dict:
             optimization_level=2,
             seed_transpiler=seed,
         )
+        if use_post_passes:
+            tqc = post_passes.run(tqc)
 
         ops = tqc.count_ops()
         total_gates = int(sum(ops.values()))
@@ -127,7 +253,19 @@ def evaluate_epsilon(eps: float) -> dict:
         t_count = ops.get("t", 0) + ops.get("tdg", 0)
         depth = tqc.depth()
 
+        if gatecap_checks < early_gatecap_seeds:
+            gatecap_checks += 1
+
         if total_gates > max_total_gates:
+            if gatecap_checks <= early_gatecap_seeds:
+                gatecap_hits += 1
+                if gatecap_checks == early_gatecap_seeds and gatecap_hits == early_gatecap_seeds:
+                    print(
+                        f"  seed={seed:02d} total={total_gates:5d} t={t_count:4d} "
+                        f"depth={depth:4d} fid=skipped -> first {early_gatecap_seeds} over cap, "
+                        "skip epsilon"
+                    )
+                    break
             print(
                 f"  seed={seed:02d} total={total_gates:5d} t={t_count:4d} "
                 f"depth={depth:4d} fid=skipped -> skip (gate cap)"
@@ -171,12 +309,15 @@ def evaluate_epsilon(eps: float) -> dict:
     }
 
 
+u_angles = choose_zyz_variant(u_phi, u_theta, u_lam, angle_prune_tol)
+v_angles = choose_zyz_variant(v_phi, v_theta, v_lam, angle_prune_tol)
+
 print("\nCoarse epsilon sweep")
 prev_eps = None
 selected = None
 
 for eps in epsilon_coarse:
-    result = evaluate_epsilon(eps)
+    result = evaluate_epsilon(eps, u_angles, v_angles)
     if result["min_total"] is not None:
         if min_total_gates is None or result["min_total"] < min_total_gates:
             min_total_gates = result["min_total"]
@@ -193,7 +334,7 @@ if selected is not None and prev_eps is not None:
     print(f"\nRefining between {prev_eps:.1e} and {selected[0]:.1e}")
     refine_eps = np.logspace(np.log10(prev_eps), np.log10(selected[0]), num=refine_steps)
     for eps in refine_eps[1:-1]:
-        result = evaluate_epsilon(float(eps))
+        result = evaluate_epsilon(float(eps), u_angles, v_angles)
         if result["min_total"] is not None:
             if min_total_gates is None or result["min_total"] < min_total_gates:
                 min_total_gates = result["min_total"]
