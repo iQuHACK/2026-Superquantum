@@ -1,6 +1,7 @@
 \documentclass[twocolumn, letterpaper]{article}
 \usepackage{authblk}
 \usepackage{amsmath}
+\usepackage{cite}
 \usepackage{tikz}
 \usetikzlibrary{quantikz2}
 \newtheorem{theorem}{Theorem}
@@ -22,7 +23,9 @@
 \end{abstract}
 
 \section{Introduction}
-The development and optimization of fault-tolerant quantum circuits has been at the forefront of quantum research in recent years. This weekend at iQuHack, Superquantum tasked us with implementing efficient approximate quantum circuit implementations of unitary gate operators using the Clifford + $T$ gate set, where the latter is by far the most computationally difficult gate to execute and functions as a description of the ``quantumness'' of a circuit.
+The development and optimization of fault-tolerant quantum circuits has been at the forefront of quantum research in recent years. This weekend at iQuHack, Superquantum tasked us with implementing efficient approximate quantum circuit implementations of unitary gate operators using the Clifford + $T$ gate set, where the latter is by far the most computationally difficult gate to execute and functions as a description of the ``quantumness'' of a circuit.\footnotemark
+
+\footnotetext{Our code is freely available on GitHub at the following link: \texttt{https://github.com/adam-godel/2026-Superquantum}.}
 
 Our approach to implement these unitaries varied widely depending on the operator. Some have symmetries that can be exploited, while others are completely random and require brute-force optimization. Furthermore, there is a subjective tradeoff between minimizing the number of $T$ gates and minimizing the distance between the approximate and the exact unitaries. In this writeup, we present our approaches to implement all eleven operators tasked in our challenge, considering how our implementations can be varied in both of these optimization regimes.
 
@@ -35,7 +38,7 @@ A \emph{qubit} is the fundamental bit of information in quantum computing. A \em
 \end{equation}
 where $|\alpha|^2+|\beta|^2+|\gamma|^2+|\delta|^2=1$. A two-qubit quantum state can be acted upon with \emph{quantum gates}, which are represented as unitary matrices $A \in U(4)$ such that $|\psi\rangle \mapsto A|\psi\rangle$, which is a valid two-qubit quantum state. Similarly, one-qubit quantum gates are unitary matrices in $U(2)$.
 
-The following quantum gates are known as the \emph{Clifford gates}:
+The following quantum gates are known as the \emph{Clifford gates}\cite{PhysRevA.57.127}:
 \begin{align}
 	H = \frac{1}{\sqrt{2}}\begin{bmatrix}
  	1 & 1 \\
@@ -59,9 +62,9 @@ When combined with the $T$ gate, defined as
  0 & e^{i\frac{\pi}{4}}
  \end{bmatrix},
 \end{equation}
-they form a \emph{universal gate set}, meaning that any unitary operation can be approximated to arbitrary precision using circuits built with just these four gates.
+they form a \emph{universal gate set}\cite{PhysRevA.105.052602}, meaning that any unitary operation can be approximated to arbitrary precision using circuits built with just these four gates.
 
-Moreover, the \emph{Gottesman-Knill theorem} shows that the Clifford gates can be simulated in polynomial time on a classical computer. This reduces the ``hardness'' of a quantum circuit to be described in the number of $T$ gates it contains. 
+Moreover, the \emph{Gottesman-Knill theorem}~\cite{PhysRevA.70.052328} shows that the Clifford gates can be simulated in polynomial time on a classical computer. This reduces the ``hardness'' of a quantum circuit to be described in the number of $T$ gates it contains. 
 
 \section{Our Implementations}
 We now go through each of the eleven unitaries we implemented during the weekend, and the optimizations we made to leverage both low $T$ gate counts and higher accuracy. We describe the implementations in order, although the difficulty in constructing each implementation varied widely.
@@ -88,19 +91,65 @@ The \emph{controlled-$R_y$ gate} is defined as
  	0 & 0 & \sin(\theta/2) & \cos(\theta/2)
  \end{bmatrix}.
 \end{equation}
-We want to consider the case where $\theta=\pi/7$, which does not map cleanly onto a Clifford + $T$ gate set. Therefore, we have to consider approximations. This is when we developed our central strategy for creating these implementations: \emph{\textbf{modularity}} of gates. Suppose we had a $R_z$ gate in our toolbox, defined as
-\begin{equation}
-	R_z(\theta) = \begin{bmatrix}
- 	e^{-i\frac{\theta}{2}} & 0 \\
- 	0 & e^{i\frac{\theta}{2}}
- \end{bmatrix}.
-\end{equation}
-If this were the case, we could represent $CR_y(\theta)$ with the following circuit:
+We want to consider the case where $\theta=\pi/7$, which does not map cleanly onto a Clifford + $T$ gate set. Therefore, we have to consider approximations. This is when we developed our central strategy for creating these implementations: \emph{\textbf{modularity}} of gates. 
+
+Suppose we had a $R_y$ gate in our toolbox. If this were the case, we could represent $CR_y(\theta)$ with the following circuit:
 \begin{equation}
 	\begin{quantikz}
 		\lstick{$q_0$} &&\ctrl{1}&&\ctrl{1}& \\
-		\lstick{$q_1$} &\gate{R_z(\theta/2)}&\targ{}&\gate{R_z(-\theta/2)}&\targ{}&
+		\lstick{$q_1$} &\gate{R_y(\theta/2)}&\targ{}&\gate{R_y(-\theta/2)}&\targ{}&
 	\end{quantikz}
 \end{equation}
-We know that this is true by considering the state of $q_1$ based on the state of $q_0$. We know that $CR_y(\theta)$ 
+We know that this is true by considering the state of $q_1$ based on the state of $q_0$. We know that $CR_y(\theta)$ should apply $R_y(\theta)$ if $q_0=|1\rangle$ and do nothing if $q_0=|0\rangle$. In Eq. 7, we can see that if $q_0=|0\rangle$, nothing is done to $q_1$, while if $q_0=|1\rangle$, we can see that a $R_y(\theta)$ gate is applied to $q_1$.
+
+The problem now reduces to an implementation of $R_y(\theta)$. We can observe that since $SXS^\dagger=Y$ and $HZH=X$, we have $R_y(\theta)=SHR_z(\theta)HS^\dagger$, i.e. we can represent $R_y(\theta)$ in terms of just $R_z(\theta)$ and Clifford gates. It is easy to see that the same is true for $R_x(\theta)$.
+
+We implement a Clifford + $T$ gate approximation of $R_z(\theta)$ using the \texttt{gridsynth} package~\cite{10.5555/3179330.3179331}, which takes in an angle $\theta$ and a precision $\epsilon$ and computes a decomposition for $R_z(\theta)$ with a $T$-gate count within $O(\log(\log(1/\epsilon)))$ of optimal.
+
+This allows us to modularly use the $R_x$, $R_y$, and $R_z$ gates, noting that they are the most expensive operation, so we should aim to minimize their usage. \textbf{[todo: results with and without rotation gates]}
+
+\subsection{Exponential of a Pauli String}
+We next tackle the implementation of $\exp(i\frac{\pi}{7} ZZ)$. We can observe that 
+\begin{equation}
+\exp(i\theta ZZ) = CX (I \otimes \exp(i\theta Z)) CX.
+\end{equation}
+Consider the $R_z$ gate, which is defined as
+\begin{equation}
+	R_z(\theta) = \begin{bmatrix}
+ 	e^{-i\frac{\theta}{2}} & 0 \\
+	0 & e^{i\frac{\theta}{2}}
+ \end{bmatrix}.
+\end{equation}
+It is not hard to see that $\exp(i\theta Z)=R_z(-2\theta)$. Therefore, we can implement this unitary similarly to the previous one but using only one $R_z$ gate.
+
+\subsection{Exponential of a Hamiltonian}
+Consider the unitary operator $\exp(i\frac{\pi}{7}H_1)$, where $H_1=XX+YY$. We implement each summand separately in a construction is similar to above. We implement $\exp(i \frac{\pi}{7} XX)$ by taking the previous circuit and conjugating with $H$, and we implement $\exp(i \frac{\pi}{7} YY)$ by conjugating with $HS$ and $S^\dagger H$ on both qubits. This allows us to implement the exponential of this Hamiltonian using only two $R_z$ gates.
+
+\subsection{A Curiously Simple Hamiltonian}
+Suppose we consider a similar Hamiltonian to the one above, but with a slightly different construction. We consider $\exp(i\frac{\pi}{4}H_2)$, where $H_2=XX+YY+ZZ$. Can we implement this operator more efficiently than the previous ones?
+
+It turns out that we can, using the SWAP gate, which is defined as
+\begin{equation}
+	\text{SWAP} = \frac{1}{2}(II+XX+YY+ZZ).
+\end{equation}
+Using the SWAP gate, we can rewrite our exponential as
+\begin{align}
+	\exp\left(i\frac{\pi}{4}H_2\right) &= \exp\left(i\frac{\pi}{4}(2\text{SWAP}-I)\right) \\
+	&= e^{-i\frac{\pi}{4}}\exp\left(i\frac{\pi}{2}\text{SWAP}\right) \\
+	&= e^{i\frac{\pi}{4}}\text{SWAP}
+\end{align}
+where the coefficient is a global phase that we can discard. Therefore, the Hamiltonian exponential is equivalent to the SWAP gate, which we can easily write using three CNOTs by the XOR swap algorithm:
+\begin{equation}
+	\begin{quantikz}
+		\lstick{$q_0$} &\ctrl{1}&\targ{}&\ctrl{1}& \\
+		\lstick{$q_1$} &\targ{}&\ctrl{-1}&\targ{}&
+	\end{quantikz}
+\end{equation}
+This form makes the Hamiltonian trivial to simulate.
+
+\subsection{Two-Qubit Transverse Field Ising Model}
+We construct this exponential operator, defined as $\exp(i\frac{\pi}{7}H_3)$, where $H_3=XX+ZI+IZ$. We construct the $XX$ term in the same way as described in Sec. 3.4. For the other two terms, we simply apply $R_z(-\theta)$
+
+\bibliographystyle{unsrt}
+\bibliography{main}
 \end{document}
