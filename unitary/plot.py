@@ -159,21 +159,21 @@ def get_circuit_construction(uid, theta, eps, optimization_level=0):
     return qc
 
 
-def run_plot(unitary_ids, theta, show_individual=True, show_combined=True):
+def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
     """
-    Creates comprehensive plots showing distance vs T-count tradeoffs.
+    Creates simple T-count vs Distance plots for each construction.
     
     Args:
         unitary_ids: List of unitary IDs to analyze
         theta: Angle parameter for constructions
         show_individual: If True, create individual plots for each construction
-        show_combined: If True, create a combined comparison plot
+        show_combined: If True, create a combined comparison plot (deprecated)
     """
     # Wide epsilon range to explore the full tradeoff curve
-    epsilons = [10**(-i/2) for i in range(2, 18)]
+    epsilons = [10**(-i/2) for i in range(2, 20)]  # More granular range
     
-    # Try both optimization levels
-    optimization_levels = [0, 1]
+    # Fixed constructions that don't depend on epsilon
+    fixed_unitaries = {5, 8, 9}
     
     all_results = {}
     
@@ -187,13 +187,35 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=True):
         print(f"{'='*60}")
         
         target_u = EXPECTED_DICT[uid]
-        results_by_opt = {}
+        results = []
         
-        for opt_level in optimization_levels:
-            results = []
+        # For fixed unitaries, only compute once
+        if uid in fixed_unitaries:
+            qc = get_circuit_construction(uid, theta, epsilons[0], optimization_level=1)
             
+            if qc.num_qubits == 0:
+                print(f"  Construction not implemented for Unitary {uid}")
+                continue
+            
+            qasm_str = dumps3(qc)
+            t_count = count_t_gates_manual(qasm_str)
+            
+            # Distance calculation with global phase alignment
+            actual = Operator(qc).data
+            aligned = distance_global_phase(actual, target_u)
+            dist = np.linalg.norm(aligned - target_u)
+            d_val = float(dist) if hasattr(dist, '__len__') else dist
+            
+            # Add single result
+            results.append((epsilons[0], t_count, d_val))
+            
+            print(f"  Fixed construction: T-count={t_count}, Distance={d_val:.2e}")
+            print(f"  Note: This is a fixed circuit (epsilon does not affect T-count or distance)")
+        
+        else:
+            # For variable unitaries, scan all epsilon values
             for eps in epsilons:
-                qc = get_circuit_construction(uid, theta, eps, optimization_level=opt_level)
+                qc = get_circuit_construction(uid, theta, eps, optimization_level=1)
                 
                 # Skip if construction not implemented
                 if qc.num_qubits == 0:
@@ -207,131 +229,113 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=True):
                 aligned = distance_global_phase(actual, target_u)
                 dist = np.linalg.norm(aligned - target_u)
                 
-                results.append((eps, t_count, dist))
+                # Convert distance to scalar if it's an array
+                d_val = float(dist) if hasattr(dist, '__len__') else dist
                 
+                results.append((eps, t_count, d_val))
+            
             if results:
-                results_by_opt[opt_level] = results
-                
-                # Print summary for this optimization level
-                opt_name = "Synthesized only" if opt_level == 0 else "With exact gates"
-                print(f"\n{opt_name}:")
+                # Print summary
                 print(f"  Epsilon range: {min(r[0] for r in results):.2e} to {max(r[0] for r in results):.2e}")
                 print(f"  T-count range: {min(r[1] for r in results)} to {max(r[1] for r in results)}")
                 print(f"  Distance range: {min(r[2] for r in results):.2e} to {max(r[2] for r in results):.2e}")
         
-        all_results[uid] = results_by_opt
+        if not results:
+            print(f"  No results generated for Unitary {uid}")
+            continue
         
-        # Individual plot for this construction
-        if show_individual and results_by_opt:
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+        all_results[uid] = results
+        
+        # Create individual plot for this construction
+        if show_individual:
+            # For fixed unitaries with single point, create a simple marker plot
+            if uid in fixed_unitaries and len(results) == 1:
+                eps, t_count, d_val = results[0]
+                
+                plt.figure(figsize=(10, 7))
+                
+                plt.scatter([t_count], [d_val], s=200, marker='o', 
+                           color='tab:red', alpha=0.8, label=f'Unitary {uid} (Fixed)', 
+                           edgecolors='black', linewidths=2, zorder=5)
+                
+                plt.yscale('log')
+                plt.xscale('log')
+                plt.xlabel('T-Count (Gates)', fontsize=14, fontweight='bold')
+                plt.ylabel('Distance to Target (Error)', fontsize=14, fontweight='bold')
+                plt.title(f'Unitary {uid}: Fixed Construction\n(T-count={t_count}, Distance={d_val:.2e})', 
+                         fontsize=15, fontweight='bold')
+                plt.grid(True, which="both", ls="--", alpha=0.4)
+                plt.legend(loc='best', fontsize=12, framealpha=0.9)
+                
+                # Add annotation
+                plt.annotate(f'T={t_count}\nDist={d_val:.2e}', 
+                           xy=(t_count, d_val), xytext=(10, 10),
+                           textcoords='offset points', fontsize=11,
+                           bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7),
+                           arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+                
+                plt.tight_layout()
+                filename = f'unitary_{uid}_distance_vs_tcount.png'
+                plt.savefig(filename, dpi=150, bbox_inches='tight')
+                print(f"  Saved plot: {filename}")
+                plt.close()
             
-            for opt_level, results in results_by_opt.items():
+            else:
+                # For variable unitaries, filter and plot normally
                 # Filter: Keep best distance for each unique T-count
                 best_points = {}
                 for eps, t, d in results:
-                    # Convert distance to scalar if it's an array
-                    d_val = float(d) if hasattr(d, '__len__') else d
-                    if t not in best_points or d_val < best_points[t][0]:
-                        best_points[t] = (d_val, eps)
+                    if t not in best_points or d < best_points[t]:
+                        best_points[t] = d
                 
                 sorted_t = sorted(best_points.keys())
-                sorted_d = [best_points[t][0] for t in sorted_t]
-                sorted_eps = [best_points[t][1] for t in sorted_t]
+                sorted_d = [best_points[t] for t in sorted_t]
                 
-                opt_label = "Synthesized" if opt_level == 0 else "With exact gates"
+                # Create simple plot
+                plt.figure(figsize=(10, 7))
                 
-                # Plot 1: Distance vs T-count (main plot)
-                ax1.plot(sorted_t, sorted_d, marker='o', linewidth=2, 
-                        markersize=6, label=opt_label, alpha=0.8)
+                plt.plot(sorted_t, sorted_d, marker='o', linewidth=2.5, 
+                        markersize=8, color='tab:blue', alpha=0.8, label=f'Unitary {uid}')
                 
-                # Plot 2: Both T-count and distance vs epsilon (to show relationship)
-                ax2_twin = ax2.twinx()
-                line1 = ax2.plot(sorted_eps, sorted_t, marker='s', linewidth=2,
-                               label=f'{opt_label} (T-count)', alpha=0.7)
-                line2 = ax2_twin.plot(sorted_eps, sorted_d, marker='^', linewidth=2,
-                                     linestyle='--', label=f'{opt_label} (Distance)', alpha=0.7)
-            
-            # Format Plot 1
-            ax1.set_yscale('log')
-            ax1.set_xlabel('T-Count (Gates)', fontsize=12, fontweight='bold')
-            ax1.set_ylabel('Distance to Target (Error)', fontsize=12, fontweight='bold')
-            ax1.set_title(f'Unitary {uid}: Distance vs T-Count Tradeoff', fontsize=13, fontweight='bold')
-            ax1.grid(True, which="both", ls="--", alpha=0.3)
-            ax1.legend(loc='best')
-            
-            # Format Plot 2
-            ax2.set_xscale('log')
-            ax2.set_xlabel('Epsilon (Synthesis Precision)', fontsize=12, fontweight='bold')
-            ax2.set_ylabel('T-Count', fontsize=12, fontweight='bold', color='tab:blue')
-            ax2_twin.set_ylabel('Distance', fontsize=12, fontweight='bold', color='tab:orange')
-            ax2_twin.set_yscale('log')
-            ax2.set_title(f'Unitary {uid}: Effect of Epsilon', fontsize=13, fontweight='bold')
-            ax2.grid(True, which="both", ls="--", alpha=0.3)
-            ax2.tick_params(axis='y', labelcolor='tab:blue')
-            ax2_twin.tick_params(axis='y', labelcolor='tab:orange')
-            
-            plt.tight_layout()
-            plt.savefig(f'unitary_{uid}_analysis.png', dpi=150, bbox_inches='tight')
-            print(f"  Saved plot: unitary_{uid}_analysis.png")
+                plt.yscale('log')
+                plt.xscale('log')
+                plt.xlabel('T-Count (Gates)', fontsize=14, fontweight='bold')
+                plt.ylabel('Distance to Target (Error)', fontsize=14, fontweight='bold')
+                plt.title(f'Unitary {uid}: Distance vs T-Count\n(θ = {theta:.4f} rad = {theta*180/math.pi:.2f}°)', 
+                         fontsize=15, fontweight='bold')
+                plt.grid(True, which="both", ls="--", alpha=0.4)
+                plt.legend(loc='best', fontsize=12, framealpha=0.9)
+                
+                # Add text with best and worst points
+                if sorted_t:
+                    min_t_idx = 0
+                    max_t_idx = len(sorted_t) - 1
+                    textstr = f'Min T: {sorted_t[min_t_idx]} (dist={sorted_d[min_t_idx]:.2e})\n'
+                    textstr += f'Max T: {sorted_t[max_t_idx]} (dist={sorted_d[max_t_idx]:.2e})'
+                    plt.text(0.05, 0.05, textstr, transform=plt.gca().transAxes,
+                            fontsize=10, verticalalignment='bottom',
+                            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                
+                plt.tight_layout()
+                filename = f'unitary_{uid}_distance_vs_tcount.png'
+                plt.savefig(filename, dpi=150, bbox_inches='tight')
+                print(f"  Saved plot: {filename}")
+                plt.close()  # Close the figure to free memory
     
-    # Combined comparison plot
-    if show_combined and all_results:
-        plt.figure(figsize=(12, 8))
-        
-        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
-        
-        for idx, (uid, results_by_opt) in enumerate(all_results.items()):
-            # Use optimization level 1 (with exact gates) for the combined view
-            opt_level = 1 if 1 in results_by_opt else 0
-            results = results_by_opt[opt_level]
-            
-            # Filter: Keep best distance for each unique T-count
-            best_points = {}
-            for eps, t, d in results:
-                # Convert distance to scalar if it's an array
-                d_val = float(d) if hasattr(d, '__len__') else d
-                if t not in best_points or d_val < best_points[t]:
-                    best_points[t] = d_val
-            
-            sorted_t = sorted(best_points.keys())
-            sorted_d = [best_points[t] for t in sorted_t]
-            
-            plt.plot(sorted_t, sorted_d, marker='o', linewidth=2.5, 
-                    markersize=8, label=f'Unitary {uid}', 
-                    color=colors[idx], alpha=0.8)
-        
-        plt.yscale('log')
-        plt.xscale('log')
-        plt.xlabel('T-Count (Gates)', fontsize=13, fontweight='bold')
-        plt.ylabel('Distance to Target (Error)', fontsize=13, fontweight='bold')
-        plt.title(f'All Constructions: Efficiency Frontier\n(θ = {theta:.4f} rad = {theta*180/math.pi:.2f}°)', 
-                 fontsize=14, fontweight='bold')
-        plt.grid(True, which="both", ls="--", alpha=0.3)
-        plt.legend(loc='best', fontsize=11, framealpha=0.9)
-        plt.tight_layout()
-        plt.savefig('all_constructions_comparison.png', dpi=150, bbox_inches='tight')
-        print(f"\n{'='*60}")
-        print("Saved combined plot: all_constructions_comparison.png")
-        print(f"{'='*60}")
-        
-        plt.show()
+    print(f"\n{'='*60}")
+    print(f"Analysis complete! Generated {len(all_results)} individual plots.")
+    print(f"{'='*60}")
 
 if __name__ == "__main__":
     # List all constructions you want to investigate
     # Unitaries 5, 8, 9 don't use theta parameter (fixed constructions)
-    # Unitary 7 needs custom implementation
-    # Unitary 10 doesn't exist in expected dict
     constructions_to_analyze = [2, 3, 4, 5, 6, 8, 9]
     
     theta_value = math.pi / 7
     
-    print(f"Running comprehensive analysis for θ = {theta_value:.4f} rad = {theta_value*180/math.pi:.2f}°")
+    print(f"Running analysis for θ = {theta_value:.4f} rad = {theta_value*180/math.pi:.2f}°")
     print(f"Constructions: {constructions_to_analyze}")
     print(f"Note: Unitaries 5, 8, 9 are fixed constructions (don't depend on theta or epsilon)")
-    print(f"\nThis will generate:")
-    print(f"  - Individual analysis plots for each construction")
-    print(f"  - Combined comparison plot showing all constructions")
-    print(f"  - Exploration of different epsilon values and optimization strategies")
+    print(f"\nThis will generate individual T-count vs Distance plots for each construction.")
     
-    run_plot(constructions_to_analyze, theta_value, 
-             show_individual=True, show_combined=True)
+    run_plot(constructions_to_analyze, theta_value, show_individual=True)
