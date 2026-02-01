@@ -56,10 +56,10 @@ def reformat(in_file):
     for op in main_ops:
         expand_line(op, {}, gates, out_ops)
 
-    # output name parsed_unitaryX.qasm next to input
+    # output name unitaryX.qasm next to input
     m = re.search(r'unitary(\d+)\.qasm$', p.name)
     X = m.group(1) if m else "0"
-    out_path = p.with_name(f"parsed_unitary{X}.qasm")
+    out_path = p.with_name(f"unitary{X}.qasm")
 
     out_path.write_text(
         "OPENQASM 3.0;\n"
