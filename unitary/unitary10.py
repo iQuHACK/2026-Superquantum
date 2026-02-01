@@ -6,7 +6,6 @@ TARGET_DISTANCE in a separate process to improve CPU utilization. Results are
 printed in ascending target order to match the sequential script's output order.
 """
 
-# --- perf hygiene: avoid each process spawning many BLAS threads -----------
 import os as _os
 _os.environ.setdefault("OMP_NUM_THREADS", "1")
 _os.environ.setdefault("MKL_NUM_THREADS", "1")
@@ -25,7 +24,6 @@ from qiskit.circuit.library import UnitaryGate
 
 from optim import _synthesize, normalize_angle, build_circuit, total_t_count
 
-# --- Configuration (same values as unitary10.py) ---
 ANGLE_TOL = 1e-1
 
 TARGET_DISTANCES = [
@@ -77,7 +75,6 @@ def extract_ops(target_matrix):
             a = normalize_angle(float(inst.operation.params[0]))
             if abs(a) > ANGLE_TOL:
                 ops.append(("rz", qubits[0], a))
-        # unknown/ignored ops are skipped to match unitary10.py behavior
 
     return ops
 
@@ -187,12 +184,48 @@ def main():
             print(f"Warning: Target distance {target_dist} not reachable in sweep.")
             continue
         print(f"DONE -> Target: {target_dist} | Final T: {final_t} | Final Dist: {final_dist:.6e}")
-        if qasm_str:
-            tag = f"{target_dist:.0e}".replace("+", "")
-            qasm_path = os.path.join("qasm", f"unitary10_target_{tag}.qasm")
-            with open(qasm_path, "w") as f:
-                f.write(qasm_str)
-            print(f"Saved to {qasm_path}")
+
+    # Pick a single "balanced" result: normalize T-count and distance, then
+    # minimize a 50/50 composite score.
+    candidates = [
+        (target_dist, final_t, final_dist, qasm_str)
+        for target_dist, success, final_t, final_dist, qasm_str in results
+        if success and qasm_str
+    ]
+
+    if not candidates:
+        print("\nNo successful candidates; no QASM file written.")
+        return
+
+    t_values = [c[1] for c in candidates]
+    d_values = [c[2] for c in candidates]
+    t_min, t_max = min(t_values), max(t_values)
+    d_min, d_max = min(d_values), max(d_values)
+
+    def _norm(val, vmin, vmax):
+        if vmax == vmin:
+            return 0.0
+        return (val - vmin) / (vmax - vmin)
+
+    best = None
+    for target_dist, final_t, final_dist, qasm_str in candidates:
+        t_norm = _norm(final_t, t_min, t_max)
+        d_norm = _norm(final_dist, d_min, d_max)
+        score = 0.5 * t_norm + 0.5 * d_norm
+        key = (score, final_t, final_dist)
+        if best is None or key < best[0]:
+            best = (key, target_dist, final_t, final_dist, qasm_str)
+
+    _, best_target, best_t, best_dist, best_qasm = best
+
+    qasm_path = os.path.join("qasm", "unitary10.qasm")
+    with open(qasm_path, "w") as f:
+        f.write(best_qasm)
+    print("\n" + "=" * 60)
+    print("SAVED SINGLE BALANCED RESULT")
+    print("=" * 60)
+    print(f"Selected target: {best_target} | T: {best_t} | Dist: {best_dist:.6e}")
+    print(f"Saved to {qasm_path}")
 
     print("\nAll target optimizations complete.")
 
