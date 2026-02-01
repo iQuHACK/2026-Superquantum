@@ -10,6 +10,8 @@ from utils import Ry, Rz
 from test import count_t_gates_manual, distance_global_phase, expected as EXPECTED_DICT
 from unitary7 import generate_candidates, optimize_candidate_ops
 
+from plot10 import apply_scientific_style
+
 def smart_rz(qc, angle, eps, qubit, use_exact=True):
     """
     Intelligently choose between exact T/S gates and synthesized Rz.
@@ -208,6 +210,9 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
         show_individual: If True, create individual plots for each construction
         show_combined: If True, create a combined comparison plot (deprecated)
     """
+    # Apply scientific plotting style
+    apply_scientific_style()
+    
     # Wide epsilon range to explore the full tradeoff curve
     epsilons = [10**(-i/2) for i in range(2, 20)]  # More granular range
     
@@ -368,7 +373,7 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
 if __name__ == "__main__":
     # List all constructions you want to investigate
     # Unitaries 5, 8, 9 don't use theta parameter (fixed constructions)
-    constructions_to_analyze = [11]
+    constructions_to_analyze = [2]
     
     theta_value = math.pi / 7
     
