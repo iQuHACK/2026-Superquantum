@@ -8,7 +8,7 @@ from qiskit.qasm3 import dumps as dumps3
 
 from utils import Ry, Rz
 from test import count_t_gates_manual, distance_global_phase, expected as EXPECTED_DICT
-from unitary7 import generate_candidates, optimize_candidate
+from unitary7 import generate_candidates, optimize_candidate_ops
 
 def smart_rz(qc, angle, eps, qubit, use_exact=True):
     """
@@ -192,6 +192,9 @@ def get_circuit_construction(uid, theta, eps, optimization_level=0):
         # Unitary 10: Not defined in expected dict
         pass
         
+    elif uid == 11:
+        pass
+
     return qc
 
 
@@ -209,7 +212,7 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
     epsilons = [10**(-i/2) for i in range(2, 20)]  # More granular range
     
     # Fixed constructions that don't depend on epsilon
-    fixed_unitaries = {5, 8, 9}
+    fixed_unitaries = {5, 8, 9, 11}
     
     all_results = {}
     
@@ -365,7 +368,7 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
 if __name__ == "__main__":
     # List all constructions you want to investigate
     # Unitaries 5, 8, 9 don't use theta parameter (fixed constructions)
-    constructions_to_analyze = [7]
+    constructions_to_analyze = [11]
     
     theta_value = math.pi / 7
     
