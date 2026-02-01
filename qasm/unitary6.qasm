@@ -1,6 +1,6 @@
 OPENQASM 3.0;
 include "stdgates.inc";
-gate _circuit_158 _gate_q_0 {
+gate _circuit_42 _gate_q_0 {
   h _gate_q_0;
   tdg _gate_q_0;
   sdg _gate_q_0;
@@ -33,7 +33,7 @@ gate _circuit_158 _gate_q_0 {
   sdg _gate_q_0;
   sdg _gate_q_0;
 }
-gate _circuit_161 _gate_q_0 {
+gate _circuit_45 _gate_q_0 {
   h _gate_q_0;
   tdg _gate_q_0;
   sdg _gate_q_0;
@@ -78,7 +78,7 @@ gate _circuit_161 _gate_q_0 {
   s _gate_q_0;
   h _gate_q_0;
 }
-gate _circuit_164 _gate_q_0 {
+gate _circuit_48 _gate_q_0 {
   h _gate_q_0;
   tdg _gate_q_0;
   sdg _gate_q_0;
@@ -127,9 +127,9 @@ qubit[2] q;
 h q[0];
 h q[1];
 cx q[0], q[1];
-_circuit_158 q[1];
+_circuit_42 q[1];
 cx q[0], q[1];
 h q[0];
 h q[1];
-_circuit_161 q[0];
-_circuit_164 q[1];
+_circuit_45 q[0];
+_circuit_48 q[1];
