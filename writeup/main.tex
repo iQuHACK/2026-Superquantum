@@ -281,8 +281,7 @@ Figure 4 depicts varying epsilon values for Unitary 6. Unitary 6 shows a rapid i
 	\caption{T-count vs. distance tradeoff for Unitary 7.}
 	\label{fig:unitary7}
 \end{figure}
-Figure 5 depicts varying epsilon values for Unitary 7. The plot for Unitary 7 monitors Fidelity instead of distance, specifically tracking performance within an extremely narrow, high-precision band between 0.9999990 and 1.0. The results show a highly unstable, oscillatory pattern between T-counts of 490 and 592, which reflects the randomized search protocol used to satisfy the strict target fidelity threshold of $\geq$ 0.999999. This high gate cost and non-linear behavior are characteristic of ``totally random'' state preparations that lack structural symmetries, requiring a brute-force exploration of the Clifford + T space to maintain near-perfect accuracy.
-
+Figure 5 depicts varying epsilon values for Unitary 7. For Unitary 7, the analysis shifted from distance to Fidelity, targeting an extremely narrow high-precision band between 0.9999990 and 1.0. The plot reveals a stochastic, oscillatory pattern between T-counts of 490 and 592, characteristic of the randomized search protocol used to satisfy the strict $\geq$ 0.999999 fidelity threshold. This high resource cost and non-linear behavior are typical for "totally random" state preparations that lack exploitable structural symmetries.
 \subsection{Unitary 10}
 \begin{figure}[htbp]
 	\centering
