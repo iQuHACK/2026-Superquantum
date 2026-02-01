@@ -272,7 +272,28 @@ Figure 3 depicts varying $\epsilon$ values for Unitary 4. This operator follows 
 	\caption{$T$-count vs. distance tradeoff for Unitary 6.}
 	\label{fig:unitary6}
 \end{figure}
+\begin{table}[h!]
+\centering
+\begin{tabular}{c c c}
+\hline
+\textbf{Variant} & \textbf{$T$-count} & \textbf{Distance} \\
+\hline
+YYY & 294 & 0.5090 \\
+YYN & 196 & 0.8959 \\
+YNY & 196 & 0.8959 \\
+YNN & 98  & 1.132 \\
+NYY & 196 & 0.9714 \\
+NYN & 98  & 1.252 \\
+NNY & 98  & 1.252 \\
+NNN & 0   & 1.446 \\
+\hline
+\end{tabular}
+\caption{Comparison of $T$-count and normalized distance for different Clifford variants. A ``Y'' marker indicates that a rotation gate is used, while an ``N'' marker indicates that a Clifford approximation is used ($S^\dagger$ gates in this case).}
+\label{tab:clifford_variants}
+\end{table}
 Figure 4 depicts varying $\epsilon$ values for Unitary 6. Unitary 6 shows a rapid initial error reduction that quickly hits a hard ceiling, with the distance settling at $6.97 \times 10^{-1}$ despite increasing the $T$-count to nearly 300. This behavior suggests a structural mismatch where the specific target unitary remains mathematically distant from the gate sequences reachable within the current search depth.
+
+As an example, we decided to also investigate using pure Clifford gate approximations for Unitary 6. Table 1 shows the results, where an ``N`` marker indicates that an $S^\dagger$ gate was used instead of an $R_z\left(-\frac{2\pi}{7}\right)$ gate. The results indicate that including all of the rotation gates gives the lowest distance at the expense of having the highest $T$-count, while as we use more Clifford approximations, the accuracy decreases as the $T$-count decreases, which is what we expect.
 
 \subsection{Unitary 7}
 \begin{figure}[htbp]
