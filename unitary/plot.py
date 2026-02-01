@@ -295,28 +295,32 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
             # For fixed unitaries with single point, create a simple marker plot
             if uid in fixed_unitaries and len(results) == 1:
                 eps, t_count, d_val = results[0]
+                apply_scientific_style()
+                plt.figure(figsize=(6.8, 4.8))
                 
-                plt.figure(figsize=(10, 7))
-                
-                plt.scatter([t_count], [d_val], s=200, marker='o', 
-                           color='tab:red', alpha=0.8, label=f'Unitary {uid} (Fixed)', 
-                           edgecolors='black', linewidths=2, zorder=5)
+                plt.scatter([t_count], [d_val], s=90, marker='o',
+                           facecolors='white', edgecolors='black',
+                           linewidths=1.2, zorder=5, label=f'Unitary {uid} (Fixed)')
                 
                 plt.yscale('log')
                 plt.xscale('log')
-                plt.xlabel('T-Count (Gates)', fontsize=14, fontweight='bold')
-                plt.ylabel('Distance to Target (Error)', fontsize=14, fontweight='bold')
+                plt.xlabel('T-Count (Gates)', fontsize=12, fontweight='bold')
+                plt.ylabel('Distance to Target (Error)', fontsize=12, fontweight='bold')
                 plt.title(f'Unitary {uid}: Fixed Construction\n(T-count={t_count}, Distance={d_val:.2e})', 
-                         fontsize=15, fontweight='bold')
-                plt.grid(True, which="both", ls="--", alpha=0.4)
-                plt.legend(loc='best', fontsize=12, framealpha=0.9)
+                         fontsize=13, fontweight='bold')
+                plt.grid(True, which="both")
+                plt.legend(loc='best', fontsize=11)
                 
                 # Add annotation
-                plt.annotate(f'T={t_count}\nDist={d_val:.2e}', 
-                           xy=(t_count, d_val), xytext=(10, 10),
-                           textcoords='offset points', fontsize=11,
-                           bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7),
-                           arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+                plt.annotate(
+                    f'T={t_count}\nDist={d_val:.2e}',
+                    xy=(t_count, d_val),
+                    xytext=(10, 10),
+                    textcoords='offset points',
+                    fontsize=10,
+                    bbox=dict(boxstyle='round', facecolor='white', edgecolor='0.6', alpha=0.9),
+                    arrowprops=dict(arrowstyle='->', color='0.4', lw=0.8),
+                )
                 
                 plt.tight_layout()
                 filename = f'unitary_{uid}_distance_vs_tcount.png'
@@ -336,19 +340,53 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
                 sorted_d = [best_points[t] for t in sorted_t]
                 
                 # Create simple plot
-                plt.figure(figsize=(10, 7))
+                apply_scientific_style()
+                plt.figure(figsize=(6.8, 4.8))
                 
-                plt.plot(sorted_t, sorted_d, marker='o', linewidth=2.5, 
-                        markersize=8, color='tab:blue', alpha=0.8, label=f'Unitary {uid}')
+                plt.plot(
+                    sorted_t,
+                    sorted_d,
+                    marker='o',
+                    linewidth=1.6,
+                    markersize=5,
+                    color='black',
+                    markerfacecolor='white',
+                    markeredgecolor='black',
+                    label=f'Unitary {uid}',
+                )
                 
                 plt.yscale('log')
                 plt.xscale('log')
-                plt.xlabel('T-Count (Gates)', fontsize=14, fontweight='bold')
-                plt.ylabel('Distance to Target (Error)', fontsize=14, fontweight='bold')
+                plt.xlabel('T-Count (Gates)', fontsize=12, fontweight='bold')
+                plt.ylabel('Distance to Target (Error)', fontsize=12, fontweight='bold')
                 plt.title(f'Unitary {uid}: Distance vs T-Count\n(θ = {theta:.4f} rad = {theta*180/math.pi:.2f}°)', 
-                         fontsize=15, fontweight='bold')
-                plt.grid(True, which="both", ls="--", alpha=0.4)
-                plt.legend(loc='best', fontsize=12, framealpha=0.9)
+                         fontsize=13, fontweight='bold')
+                plt.grid(True, which="both")
+                plt.legend(loc='best', fontsize=11)
+
+                # Annotate a small, non-overlapping subset of points (left-biased)
+                ax = plt.gca()
+                if sorted_t:
+                    idx_min_d = int(np.argmin(sorted_d))
+                    idx_max_d = int(np.argmax(sorted_d))
+                    label_indices = sorted(set([0, len(sorted_t) - 1, idx_min_d, idx_max_d]))
+                    offsets = [(-28, 12), (-28, -12), (-36, 18), (-36, -18)]
+                    for k, idx in enumerate(label_indices):
+                        t_val = sorted_t[idx]
+                        d_val = sorted_d[idx]
+                        dx, dy = offsets[k % len(offsets)]
+                        va = 'bottom' if dy > 0 else 'top'
+                        ax.annotate(
+                            f'{d_val:.2e}',
+                            xy=(t_val, d_val),
+                            xytext=(dx, dy),
+                            textcoords='offset points',
+                            fontsize=9,
+                            horizontalalignment='right',
+                            verticalalignment=va,
+                            bbox=dict(boxstyle='round', facecolor='white', alpha=0.7),
+                            arrowprops=dict(arrowstyle='->', color='0.4', lw=0.8),
+                        )
                 
                 # Add text with best and worst points
                 if sorted_t:
@@ -356,9 +394,9 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
                     max_t_idx = len(sorted_t) - 1
                     textstr = f'Min T: {sorted_t[min_t_idx]} (dist={sorted_d[min_t_idx]:.2e})\n'
                     textstr += f'Max T: {sorted_t[max_t_idx]} (dist={sorted_d[max_t_idx]:.2e})'
-                    plt.text(0.05, 0.05, textstr, transform=plt.gca().transAxes,
-                            fontsize=10, verticalalignment='bottom',
-                            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                    plt.text(0.08, 0.05, textstr, transform=plt.gca().transAxes,
+                            fontsize=9, verticalalignment='bottom',
+                            bbox=dict(boxstyle='round', facecolor='white', edgecolor='0.6', alpha=0.9))
                 
                 plt.tight_layout()
                 filename = f'unitary_{uid}_distance_vs_tcount.png'
@@ -373,7 +411,7 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
 if __name__ == "__main__":
     # List all constructions you want to investigate
     # Unitaries 5, 8, 9 don't use theta parameter (fixed constructions)
-    constructions_to_analyze = [2]
+    constructions_to_analyze = [3]
     
     theta_value = math.pi / 7
     
