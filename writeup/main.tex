@@ -134,11 +134,13 @@ It turns out that we can, using the SWAP gate, which is defined as
 	\text{SWAP} = \frac{1}{2}(II+XX+YY+ZZ).
 \end{equation}
 Using the SWAP gate, we can rewrite our exponential as
-\begin{align}
+\begin{equation}
+\begin{aligned}
 	\exp\left(i\frac{\pi}{4}H_2\right) &= \exp\left(i\frac{\pi}{4}(2\text{SWAP}-I)\right) \\
 	&= e^{-i\frac{\pi}{4}}\exp\left(i\frac{\pi}{2}\text{SWAP}\right) \\
 	&= e^{i\frac{\pi}{4}}\text{SWAP}
-\end{align}
+\end{aligned}
+\end{equation}
 where the coefficient is a global phase that we can discard. Therefore, the Hamiltonian exponential is equivalent to the SWAP gate, which we can easily write using three CNOTs by the XOR swap algorithm:
 \begin{equation}
 	\begin{quantikz}
@@ -197,13 +199,41 @@ We aim to apply the unitary
 Notice that this unitary is the two-qubit quantum Fourier transform\cite{RossSelinger2014OptimalAncillaFree}. Since it only requires $z$ rotations that are multiples of $\frac{\pi}{4}$, we do not need any rotation gates. Our implementation uses only three $T$ gates.
 
 \subsection{Another Structured Unitary}
-Placeholder
+We aim to apply the unitary
+\begin{equation}
+	U_2 = \begin{bmatrix}
+ 	1 & 0 & 0 & 0 \\
+ 	0 & 0 & -\frac{1}{2}+\frac{i}{2} & \frac{1}{2}+\frac{i}{2} \\
+ 	0 & i & 0 & 0 \\
+ 	0 & 0 & -\frac{1}{2}+\frac{i}{2} & -\frac{1}{2}-\frac{i}{2}
+ \end{bmatrix}.
+\end{equation}
+We can observe that this unitary, without a SWAP gate applied to it, is reminiscent of a controlled operation. Specifically, we can identify it as the controlled-$R_x\left(\frac{\pi}{4}\right)$ gate with some local phase changes, specifically $S \otimes TS$ gates before the SWAP. Since $\theta=\frac{\pi}{4}$, we can apply this directly as a $T$ gate. Ultimately, our implementation uses four $T$ gates in total.
 
 \subsection{Random Unitary}
 In the case of a random unitary operator, we can just use the exact same protocol as in Sec. 3.7 but without the generation of the unitary, since we are already restricted to what the unitary needs to be. Similarly to the state preparation problem, this approach gives us an efficient circuit without exploiting any structure relating to the unitary.
 
 \subsection{Four-Qubit Diagonal Unitary}
-Placeholder
+We want to implement the four-qubit unitary $U$ such that $U|x\rangle = e^{i\frac{\pi}{8}\varphi(x)}|x\rangle$, where $\varphi(x)$ is some four-bit boolean function mod 8. 
+
+The key observation is that the phase polynomial fully encodes the unitary, and the number of odd coefficients will correspond with the number of $T$ gates. We first came up with some implementation for $\varphi(x)$, regardless of its optimality, and implemented it as a circuit. 
+
+We then used the \texttt{rmsynth} package~\cite{superquantum_rmsynth_2026} to optimize the phase polynomial, aiming to minimize both the number of $T$ gates and the $T$ gate depth. Specifically, we just used the documentation defaults: a decoder of \texttt{rpa}, an effort level of \texttt{3}, and a policy lambda of \texttt{5}.
+
+From there, we get a dictionary representing the optimized phase polynomial, which we just implement as a quantum circuit as we have for the others.
+
+This gives us a $T$ gate count of 4 with nearly perfect accuracy.
+
+\subsection{$n$-Qubit Pauli List}
+We also implemented the bonus unitary, which is defined as
+\begin{equation}
+	U = \prod_{j=1}^m \exp\left( -i\frac{\pi}{8} k_jP_j \right)
+\end{equation}
+for Pauli strings $P_j$ with coefficients $k_j$. Since all $P_j$ commute pairwise, we can perform exact diagonalization using Clifford gates to get each Pauli gate for each qubit in the right basis. 
+
+We end up with the non-Clifford operator being in the form $e^{i\frac{\pi}{8}\varphi(x)}$, just like our construction in Sec. 3.11. From there, we take the same approach, but excluding $S$ gates since they are prohibited according to the rules of the challenge.
+
+Given that constraint, we want to optimize for the lowest absolute coefficients as opposed to the lowest number of odd coefficients. We were able to get a $T$ gate count of 287; due to time constraints, we weren't really able to optimize this unitary construction in the same way we did for the others.
 
 \section{Simulations}
 Given the intrinsic tradeoff between $T$-gate count and approximation accuracy, our research investigated different optimization regimes for various target operators. For unitaries $2, 3, 4, 6, 7,$ and $10$, we utilized a modular strategy where the circuit's total $T$-count was primarily determined by the precision ($\epsilon$) of our $R_z(\theta)$ gate decompositions.
