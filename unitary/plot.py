@@ -1,10 +1,199 @@
 import numpy as np
 import math
 import matplotlib.pyplot as plt
+from qiskit import QuantumCircuit
+from qiskit import quantum_info
 from qiskit.quantum_info import Operator
 from qiskit.qasm3 import dumps as dumps3
 
+from utils import Ry, Rz
 from test import count_t_gates_manual, distance_global_phase, expected as EXPECTED_DICT
+from unitary7 import generate_candidates, optimize_candidate
+
+def smart_rz(qc, angle, eps, qubit, use_exact=True):
+    """
+    Intelligently choose between exact T/S gates and synthesized Rz.
+    If use_exact=True and angle is a multiple of pi/4, use exact gates.
+    Otherwise, synthesize with given epsilon.
+    """
+    norm_angle = angle % (2 * math.pi)
+    
+    if use_exact:
+        # Check for exact gate possibilities (zero T-cost or minimal T-cost)
+        if np.isclose(norm_angle, 0, atol=1e-10): 
+            return  # Identity, do nothing
+        elif np.isclose(norm_angle, math.pi/2, atol=1e-10):   
+            qc.s(qubit)
+            return
+        elif np.isclose(norm_angle, math.pi, atol=1e-10):     
+            qc.z(qubit)
+            return
+        elif np.isclose(norm_angle, 3*math.pi/2, atol=1e-10): 
+            qc.sdg(qubit)
+            return
+        elif np.isclose(norm_angle, math.pi/4, atol=1e-10):   
+            qc.t(qubit)
+            return
+        elif np.isclose(norm_angle, 7*math.pi/4, atol=1e-10): 
+            qc.tdg(qubit)
+            return
+    
+    # Fallback to synthesized Rz gate
+    qc.append(Rz(angle, eps).to_gate(), [qubit])
+
+def smart_ry(qc, angle, eps, qubit, use_exact=True):
+    """
+    Intelligently choose between exact gates and synthesized Ry.
+    """
+    norm_angle = angle % (2 * math.pi)
+    
+    if use_exact:
+        if np.isclose(norm_angle, 0, atol=1e-10): 
+            return  # Identity
+        elif np.isclose(norm_angle, math.pi, atol=1e-10):
+            qc.y(qubit)
+            return
+    
+    # Fallback to synthesized Ry gate
+    qc.append(Ry(angle, eps).to_gate(), [qubit])
+
+
+def get_circuit_construction(uid, theta, eps, optimization_level=0):
+    """
+    Constructions from optim.py with configurable optimization.
+    
+    optimization_level:
+    0 = Always use synthesized Rz/Ry gates
+    1 = Use exact T/S gates when angles align with pi/4 multiples
+    """
+    qc = QuantumCircuit(2)
+    use_exact = (optimization_level >= 1)
+    
+    if uid == 2:
+        smart_ry(qc, theta/2, eps, 1, use_exact)
+        qc.cx(0, 1)
+        smart_ry(qc, -theta/2, eps, 1, use_exact)
+        qc.cx(0, 1)
+        
+    elif uid == 3:
+        qc.cx(0, 1)
+        smart_rz(qc, -2*theta, eps, 1, use_exact)
+        qc.cx(0, 1)
+
+    elif uid == 4:
+        qc.h(0); qc.h(1)
+        qc.s(0); qc.s(1)
+        qc.h(0); qc.h(1)
+        qc.cx(0, 1)
+        smart_rz(qc, -2*theta, eps, 1, use_exact)
+        qc.cx(0, 1)
+        qc.h(0); qc.h(1)
+        qc.sdg(0); qc.sdg(1)
+        qc.h(0); qc.h(1)
+
+        qc.h(0); qc.h(1)
+        qc.cx(0, 1)
+        smart_rz(qc, -2*theta, eps, 1, use_exact)
+        qc.cx(0, 1)
+        qc.h(0); qc.h(1)
+
+    elif uid == 6:
+        qc.h(0); qc.h(1)
+        qc.cx(0, 1)
+        smart_rz(qc, -2*theta, eps, 1, use_exact)
+        qc.cx(0, 1)
+        qc.h(0); qc.h(1)
+
+        smart_rz(qc, -theta, eps, 0, use_exact)
+        smart_rz(qc, -theta, eps, 1, use_exact)
+    
+    elif uid == 5:
+        # Unitary 5: Simple SWAP-like construction (no rotation needed)
+        qc.cx(0, 1)
+        qc.cx(1, 0)
+        qc.cx(0, 1)
+    
+    elif uid == 8:
+        # Unitary 8: Fixed gate construction with T gates
+        qc.h(1)
+        
+        qc.t(0)
+        qc.t(1)
+        qc.cx(0, 1)
+        qc.tdg(1)
+        qc.cx(0, 1)
+        
+        qc.h(0)
+        
+        qc.cx(0, 1)
+        qc.cx(1, 0)
+        qc.cx(0, 1)
+    
+    elif uid == 9:
+        # Unitary 9: Fixed gate construction with T and S gates
+        qc.h(0)
+        
+        qc.t(0)
+        qc.t(1)
+        qc.cx(1, 0)
+        qc.tdg(0)
+        qc.cx(1, 0)
+        
+        qc.h(0)
+        
+        qc.s(0)
+        qc.s(1)
+        qc.t(1)
+        
+        qc.cx(0, 1)
+        qc.cx(1, 0)
+        qc.cx(0, 1)
+    
+    elif uid == 7:
+        # ── target (must match test.py case 7) ─────────────────────────────────────
+        statevector = quantum_info.random_statevector(4, seed=42).data
+
+        # ── tuning knobs ───────────────────────────────────────────────────────────
+        N_CANDIDATES       = 50
+        CANDIDATE_SEED     = 42
+        TARGET_FIDELITY    = 0.9999
+        ANGLE_TOL          = 1e-9
+
+        EPS_COARSE = [10**(-i/2) for i in range(2, 18)]
+
+        RELAXATION_FACTORS = [100, 50, 30, 20, 15, 10, 7, 5, 3, 2, 1.5, 1.3, 1.2, 1.1, 1.05, 1.02]
+
+        candidates = generate_candidates(statevector, N_CANDIDATES, CANDIDATE_SEED)
+
+        print(f"Statevector:      {np.round(statevector, 6)}")
+        print(f"Candidates:       {N_CANDIDATES}  |  fidelity threshold: {TARGET_FIDELITY}")
+        print("=" * 60)
+
+        best = None   # (t_count, fidelity, qc, cid, ops, rotation_indices, eps_list)
+
+        for i, cand in enumerate(candidates):
+            result = optimize_candidate(cand, statevector, i)
+            if result is None:
+                continue
+            qc, tc, fid, ops, rot_idx, eps_list = result
+            if best is None or tc < best[0] or (tc == best[0] and fid > best[1]):
+                best = (tc, fid, qc, i, ops, rot_idx, eps_list)
+
+        if best is None:
+            print("\nERROR: no candidate met the fidelity target.")
+        else:
+            tc, fid, qc, cid, ops, rot_idx, eps_list = best
+
+            qasm3_str  = dumps3(qc)
+            verified_t = count_t_gates_manual(qasm3_str)
+
+    
+    elif uid == 10:
+        # Unitary 10: Not defined in expected dict
+        pass
+        
+    return qc
+
 
 def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
     """
@@ -176,7 +365,7 @@ def run_plot(unitary_ids, theta, show_individual=True, show_combined=False):
 if __name__ == "__main__":
     # List all constructions you want to investigate
     # Unitaries 5, 8, 9 don't use theta parameter (fixed constructions)
-    constructions_to_analyze = [2, 3, 4, 5, 6, 8, 9]
+    constructions_to_analyze = [7]
     
     theta_value = math.pi / 7
     
