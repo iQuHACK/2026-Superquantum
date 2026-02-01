@@ -2,11 +2,8 @@ import numpy as np
 import os
 from qiskit import QuantumCircuit, quantum_info, transpile
 from qiskit.quantum_info import Operator
-from qiskit.qasm3 import dumps as dumps3
 from qiskit.circuit.library import UnitaryGate
 
-from utils import Rz, Ry, Rx
-from test import count_t_gates_manual
 from optim import _synthesize, normalize_angle, build_circuit, total_t_count
 
 # --- Setup ---
