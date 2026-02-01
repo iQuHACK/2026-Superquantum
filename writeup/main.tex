@@ -214,7 +214,7 @@ Given the intrinsic tradeoff between $T$-gate count and approximation accuracy, 
 	\caption{T-count vs. distance tradeoff for Unitary 2.}
 	\label{fig:unitary2}
 \end{figure}
-Figure 1 depicts varying epsilon values for Unitary 2. While increasing the {T} gate count initially causes some instability, the approximation eventually plateaus, indicating that further gate additions within this specific $T$-count range ($20$ to $200$) do not significantly improve the accuracy for this particular unitary.
+Figure 1 depicts varying epsilon values for Unitary 2. The plot for Unitary 2 exhibits a non-monotonic "spike" in error, where the distance reaches a maximum of $4.56 \times 10^{-1}$ at mid-range T-counts due to local optimization failures. As the gate budget increases to 200, the approximation stabilizes at a persistent plateau of $4.46 \times 10^{-1}$, indicating that further T-gates do not significantly improve fidelity for this specific rotation.
 
 \subsection{Unitary 3}
 \begin{figure}[htbp]
@@ -223,7 +223,7 @@ Figure 1 depicts varying epsilon values for Unitary 2. While increasing the {T} 
 	\caption{T-count vs. distance tradeoff for Unitary 3.}
 	\label{fig:unitary3}
 \end{figure}
-Figure 2 depicts varying epsilon values for Unitary 3. The plot for Unitary 3 demonstrates a more traditional and successful convergence behavior compared to Unitary 2, showing how increasing the $T$-gate budget significantly improves approximation accuracy for this specific operator.
+Figure 2 depicts varying epsilon values for Unitary 3. Unitary 3 demonstrates a successful exponential decrease in error, with the distance dropping from $7.62 \times 10^{-2}$ down to a high-precision value of $1.38 \times 10^{-10}$. The profile features a distinct "breakthrough" near a T-count of 98, where the algorithm identifies an optimal Clifford+T sequence that dramatically reduces the residual error.
 
 \subsection{Unitary 4}
 \begin{figure}[htbp]
@@ -232,7 +232,7 @@ Figure 2 depicts varying epsilon values for Unitary 3. The plot for Unitary 3 de
 	\caption{T-count vs. distance tradeoff for Unitary 4.}
 	\label{fig:unitary4}
 \end{figure}
-Figure 4 depicts varying epsilon values for Unitary 4. The plot for Unitary 4 reveals a convergence pattern similar to Unitary 3, where a strategic investment in $T$-gates eventually leads to near-perfect fidelity, though with a distinct stabilization period at moderate gate counts.
+Figure 3 depicts varying epsilon values for Unitary 4. This operator follows a steady downward trend punctuated by a significant error plateau between T-counts of 100 and 180. Upon reaching a budget of 196 gates, the distance collapses from roughly $10^{-5}$ to $1.96 \times 10^{-10}$, proving that higher T-gate thresholds are sometimes necessary to unlock high-precision approximations.
 
 \subsection{Unitary 6}
 \begin{figure}[htbp]
@@ -241,7 +241,7 @@ Figure 4 depicts varying epsilon values for Unitary 4. The plot for Unitary 4 re
 	\caption{T-count vs. distance tradeoff for Unitary 6.}
 	\label{fig:unitary6}
 \end{figure}
-Figure 6 depicts varying epsilon values for Unitary 6. The plot for Unitary 6 shows an optimization profile characterized by a rapid initial improvement followed by a sustained performance plateau, similar to the behavior seen in Unitary 2.
+Figure 4 depicts varying epsilon values for Unitary 6. Unitary 6 shows a rapid initial error reduction that quickly hits a hard ceiling, with the distance settling at $6.97 \times 10^{-1}$ despite increasing the T-count to nearly 300. This behavior suggests a structural mismatch where the specific target unitary remains mathematically distant from the gate sequences reachable within the current search depth.
 
 \subsection{Unitary 7}
 \begin{figure}[htbp]
@@ -250,7 +250,7 @@ Figure 6 depicts varying epsilon values for Unitary 6. The plot for Unitary 6 sh
 	\caption{T-count vs. distance tradeoff for Unitary 7.}
 	\label{fig:unitary7}
 \end{figure}
-Figure 7 depicts varying epsilon values for Unitary 7. 
+Figure 5 depicts varying epsilon values for Unitary 7. The plot for Unitary 7 monitors Fidelity instead of distance, specifically tracking performance within an extremely narrow, high-precision band between 0.9999990 and 1.0. The results show a highly unstable, oscillatory pattern between T-counts of 490 and 592, which reflects the randomized search protocol used to satisfy the strict target fidelity threshold of $\geq$ 0.999999. This high gate cost and non-linear behavior are characteristic of "totally random" state preparations that lack structural symmetries, requiring a brute-force exploration of the Clifford + T space to maintain near-perfect accuracy.
 
 \subsection{Unitary 10}
 \begin{figure}[htbp]
@@ -259,7 +259,7 @@ Figure 7 depicts varying epsilon values for Unitary 7.
 	\caption{T-count vs. distance tradeoff for Unitary 10.}
 	\label{fig:unitary10}
 \end{figure}
-Figure 3 depicts varying epsilon values for Unitary 10. The plot for Unitary 10 illustrates a successful optimization trajectory where a higher investment in T-gates consistently leads to a lower approximation error, despite minor instabilities.
+Figure 6 depicts varying epsilon values for Unitary 10. Unitary 10 requires a much larger resource budget, scaling from 250 to over 700 gates to achieve a precision of $1.0 \times 10^{-3}$. The log-log linear trend, despite a minor local instability at 350 gates, confirms that this "random" operator demands high gate density to achieve even moderate fidelity compared to more structured gates.
 
 \bibliographystyle{unsrt}
 \bibliography{main}
