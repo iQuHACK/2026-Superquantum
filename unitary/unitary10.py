@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from qiskit import QuantumCircuit, quantum_info, transpile
 from qiskit.quantum_info import Operator
 from qiskit.qasm3 import dumps as dumps3
@@ -7,7 +8,7 @@ from qiskit.circuit.library import UnitaryGate
 from utils import Rz, Ry, Rx
 from test import count_t_gates_manual
 
-
+# --- Setup ---
 unitary = quantum_info.random_unitary(4, seed=42)
 target = unitary.data
 
@@ -22,21 +23,15 @@ template = transpile(
 
 ANGLE_TOL = 1e-9
 
-
 def normalize_angle(a):
-    """Reduce angle to (-π, π]."""
     return float((a + np.pi) % (2 * np.pi) - np.pi)
 
-
 ops = []
-
 for inst in template.data:
     name = inst.operation.name
     qubits = [template.find_bit(q).index for q in inst.qubits]
-
     if name == "cx":
         ops.append(("cx", qubits[0], qubits[1]))
-
     elif name in ("u3", "u"):
         theta, phi, lam = [float(p) for p in inst.operation.params]
         q = qubits[0]
@@ -44,210 +39,131 @@ for inst in template.data:
             a = normalize_angle(angle)
             if abs(a) > ANGLE_TOL:
                 ops.append((axis, q, a))
-
     elif name in ("rz", "ry", "rx"):
         a = normalize_angle(float(inst.operation.params[0]))
         if abs(a) > ANGLE_TOL:
             ops.append((name, qubits[0], a))
-
     elif name == "p":
-        # Phase gate p(λ) = diag(1, e^{iλ}) = e^{iλ/2} · Rz(λ)
         a = normalize_angle(float(inst.operation.params[0]))
         if abs(a) > ANGLE_TOL:
             ops.append(("rz", qubits[0], a))
 
-    elif name in ("id", "barrier"):
-        pass
-
-    else:
-        raise ValueError(f"Unexpected gate in KAK template: {name}")
-
 rotation_indices = [i for i, op in enumerate(ops) if op[0] in ("rx", "ry", "rz")]
 n_rotations = len(rotation_indices)
-
 _cache: dict[tuple, tuple] = {}
 
-
 def _synthesize(axis, angle, eps):
-    """Synthesize one rotation gate into Clifford+T.  Returns (gate, t_count)."""
     key = (axis, angle, eps)
-    if key in _cache:
-        return _cache[key]
-    if axis == "rz":
-        subcircuit = Rz(angle, eps)
-    elif axis == "ry":
-        subcircuit = Ry(angle, eps)
-    else:
-        subcircuit = Rx(angle, eps)
+    if key in _cache: return _cache[key]
+    if axis == "rz": subcircuit = Rz(angle, eps)
+    elif axis == "ry": subcircuit = Ry(angle, eps)
+    else: subcircuit = Rx(angle, eps)
     gate = subcircuit.to_gate()
     tc = count_t_gates_manual(dumps3(subcircuit))
     _cache[key] = (gate, tc)
     return gate, tc
 
-
 def build_circuit(eps_list):
-    """Assemble the full 2-qubit Clifford+T circuit from per-rotation epsilons."""
     qc = QuantumCircuit(2)
     rot_idx = 0
     for op in ops:
-        tag = op[0]
-        if tag == "cx":
+        if op[0] == "cx":
             qc.cx(op[1], op[2])
-        else:  # rx / ry / rz
-            gate, _ = _synthesize(tag, op[2], eps_list[rot_idx])
+        else:
+            gate, _ = _synthesize(op[0], op[2], eps_list[rot_idx])
             qc.append(gate, [op[1]])
             rot_idx += 1
     return qc
 
-
 def total_t_count(eps_list):
-    """Total T-gate count: sum over all rotation subcircuits.
-
-    CX and Clifford gates contribute zero T gates, so the per-rotation
-    sum equals the full-circuit T-count exactly.
-    """
     total = 0
     for j, idx in enumerate(rotation_indices):
-        axis = ops[idx][0]
-        angle = ops[idx][2]
+        axis, angle = ops[idx][0], ops[idx][2]
         _, tc = _synthesize(axis, angle, eps_list[j])
         total += tc
     return total
 
-
 def operator_distance(actual, reference):
-    """Frobenius distance minimised over global phase.
-
-    For two d×d unitaries A, B:
-        min_φ  ‖e^{iφ} A − B‖_F  =  sqrt(2d − 2|tr(A†B)|)
-
-    Proof: expand the squared norm, optimise over φ analytically.
-    """
     d = actual.shape[0]
     inner = np.trace(actual.conj().T @ reference)
     return float(np.sqrt(max(2 * d - 2 * np.abs(inner), 0.0)))
 
+# --- SEQUENTIAL MULTI-TARGETING CONFIG ---
+# More target distances for comprehensive exploration
+TARGET_DISTANCES = [1e-1, 7e-2, 5e-2, 3e-2, 2e-2, 1e-2, 7e-3, 5e-3, 3e-3, 2e-3, 1e-3]
 
-eps_coarse = [
-    1e-1, 5e-2, 2e-2, 1e-2,
-    5e-3, 2e-3, 1e-3,
-    5e-4, 2e-4, 1e-4,
-    5e-5, 2e-5, 1e-5,
-]
-TARGET_DIST = 0.05
+# Ultra-granular epsilon sweep: 100 points from 1e-1 to 1e-9
+EPS_COARSE_SWEEP = np.logspace(-1, -9, 100)
 
-print(f"Rotation gates extracted from KAK template: {n_rotations}")
-for j, idx in enumerate(rotation_indices):
-    print(f"  rot[{j}]: {ops[idx][0]}({ops[idx][2]:+.6f}) on q{ops[idx][1]}")
+# More relaxation factors for fine-tuned optimization
+RELAXATION_FACTORS = [20, 10, 5, 3, 2, 1.5, 1.3, 1.2, 1.1, 1.05, 1.02, 1.01]
 
-print(f"\n=== Phase 1: Uniform epsilon sweep ===")
-print(f"{'eps':<10} {'T-count':<10} {'distance':<12} note")
-print("-" * 52)
+if not os.path.exists("qasm"):
+    os.makedirs("qasm")
 
-phase1_hit = False
+print(f"Rotations to optimize: {n_rotations}")
 
-for eps in eps_coarse:
-    eps_list = [eps] * n_rotations
-    tc = total_t_count(eps_list)
+# Main loop for multi-targeting
+for TARGET_DIST in TARGET_DISTANCES:
+    print(f"\n" + "="*60)
+    print(f"RUNNING OPTIMIZATION FOR TARGET DISTANCE: {TARGET_DIST}")
+    print("="*60)
 
-    qc = build_circuit(eps_list)
-    dist = operator_distance(Operator(qc).data, target)
+    # Phase 1: Uniform Sweep
+    phase1_hit = False
+    best_uniform_eps = None
+    for eps in EPS_COARSE_SWEEP:
+        eps_list = [eps] * n_rotations
+        qc = build_circuit(eps_list)
+        dist = operator_distance(Operator(qc).data, target)
+        if dist < TARGET_DIST:
+            best_uniform_eps = eps
+            phase1_hit = True
+            break 
 
-    note = "<-- target met" if dist < TARGET_DIST else ""
-    print(f"{eps:<10.1e} {tc:<10d} {dist:<12.6f} {note}")
+    if not phase1_hit:
+        print(f"Warning: Target distance {TARGET_DIST} not reachable in sweep.")
+        continue
 
-    if dist < TARGET_DIST:
-        phase1_hit = True
-        break 
+    # Phase 2: Per-rotation relaxation
+    current_eps = [best_uniform_eps] * n_rotations
+    current_t = total_t_count(current_eps)
+    current_dist = operator_distance(Operator(build_circuit(current_eps)).data, target)
 
+    iteration = 0
+    while True:
+        iteration += 1
+        any_improved = False
+        for j in range(n_rotations):
+            idx = rotation_indices[j]
+            axis, angle, orig_eps = ops[idx][0], ops[idx][2], current_eps[j]
+            _, orig_tc_j = _synthesize(axis, angle, orig_eps)
 
-if phase1_hit:
-    best_uniform_eps = eps
-else:
-    best_uniform_eps = eps_coarse[-1]
-    print(f"\nWARNING: target distance {TARGET_DIST} not reached at any "
-          f"coarse epsilon.  Starting Phase 2 from eps={best_uniform_eps:.1e}")
+            for factor in RELAXATION_FACTORS:
+                trial_eps = orig_eps * factor
+                if trial_eps > 0.5: continue
+                
+                _, trial_tc_j = _synthesize(axis, angle, trial_eps)
+                if trial_tc_j >= orig_tc_j: continue 
 
-current_eps = [best_uniform_eps] * n_rotations
-current_t = total_t_count(current_eps)
-current_dist = operator_distance(
-    Operator(build_circuit(current_eps)).data, target
-)
-print(f"\nPhase 1 → starting point: eps={best_uniform_eps:.1e}, "
-      f"T={current_t}, dist={current_dist:.6f}")
+                trial_eps_list = current_eps.copy()
+                trial_eps_list[j] = trial_eps
+                trial_dist = operator_distance(Operator(build_circuit(trial_eps_list)).data, target)
 
+                if trial_dist < TARGET_DIST:
+                    current_t = current_t - orig_tc_j + trial_tc_j
+                    current_eps[j] = trial_eps
+                    current_dist = trial_dist
+                    any_improved = True
+                    break
+        if not any_improved: break
 
-RELAXATION_FACTORS = [100, 50, 20, 10, 5, 2]
+    # Finalize result for this target
+    final_qc = build_circuit(current_eps)
+    final_t = total_t_count(current_eps)
+    final_dist = operator_distance(Operator(final_qc).data, target)
 
-print(f"\n=== Phase 2: Per-rotation greedy relaxation ===")
-
-iteration = 0
-while True:
-    iteration += 1
-    any_improved = False
-    print(f"\n  --- Iteration {iteration} "
-          f"(T={current_t}, dist={current_dist:.6f}) ---")
-
-    for j in range(n_rotations):
-        idx = rotation_indices[j]
-        axis  = ops[idx][0]
-        angle = ops[idx][2]
-        orig_eps = current_eps[j]
-        _, orig_tc_j = _synthesize(axis, angle, orig_eps)
-
-        for factor in RELAXATION_FACTORS:
-            trial_eps = orig_eps * factor
-            if trial_eps > 0.5:
-                continue
-
-            _, trial_tc_j = _synthesize(axis, angle, trial_eps)
-            if trial_tc_j >= orig_tc_j:
-                continue 
-
-            trial_eps_list = current_eps.copy()
-            trial_eps_list[j] = trial_eps
-            trial_dist = operator_distance(
-                Operator(build_circuit(trial_eps_list)).data, target
-            )
-
-            if trial_dist < TARGET_DIST:
-                new_t = current_t - orig_tc_j + trial_tc_j
-                print(f"    rot[{j}] {axis}({angle:+.4f}) q{ops[idx][1]}: "
-                      f"eps {orig_eps:.1e} → {trial_eps:.1e}, "
-                      f"T {current_t} → {new_t}, dist {trial_dist:.6f}")
-                current_eps[j] = trial_eps
-                current_t   = new_t
-                current_dist = trial_dist
-                any_improved = True
-                break
-
-    if not any_improved:
-        print("  No further relaxation possible.")
-        break
+    print(f"DONE -> Target: {TARGET_DIST} | Final T: {final_t} | Final Dist: {final_dist:.6e}")
 
 
-qc = build_circuit(current_eps)
-final_t = total_t_count(current_eps)
-final_dist = operator_distance(Operator(qc).data, target)
-
-qasm3_str = dumps3(qc)
-
-verified_t = count_t_gates_manual(qasm3_str)
-
-print(f"\n{'=' * 52}")
-print(f"  FINAL RESULT")
-print(f"{'=' * 52}")
-print(f"  T-count  (sum):    {final_t}")
-print(f"  T-count  (QASM):   {verified_t}")
-print(f"  Distance:          {final_dist:.6e}")
-print(f"  Per-rotation breakdown:")
-for j, idx in enumerate(rotation_indices):
-    axis  = ops[idx][0]
-    angle = ops[idx][2]
-    _, tc_j = _synthesize(axis, angle, current_eps[j])
-    print(f"    rot[{j}] {axis}({angle:+.4f}) q{ops[idx][1]}: "
-        f"eps={current_eps[j]:.1e}  T={tc_j}")
-
-with open("qasm/unitary10.qasm", "w") as file:
-    file.write(qasm3_str)
-print(f"\nSaved to qasm/unitary10.qasm")
+print("\nAll target optimizations complete.")
