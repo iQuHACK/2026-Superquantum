@@ -5,7 +5,7 @@ Uses the same visual style as plot10.py (scientific look, black line with
 white markers) and writes one image per unitary.
 """
 
-# --- perf hygiene: avoid each process spawning many BLAS threads -----------
+# Was not used in production code, but kept for reference for multiprocessing setup
 import os as _os
 _os.environ.setdefault("OMP_NUM_THREADS", "1")
 _os.environ.setdefault("MKL_NUM_THREADS", "1")

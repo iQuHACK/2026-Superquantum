@@ -37,6 +37,9 @@ Contains Python implementations for all 12 unitaries:
 - **`utils.py`**: Utility functions for rotation gates (Rz, Ry, Rx)
 - **`test.py`**: Testing framework with expected unitary matrices and distance calculations
 - **`plot.py`**: Plotting utilities for T-count vs. distance analysis
+- **`plot7_mp.py`**: Plotting utilities for T-count vs. Fidelity in Unitary 7
+- **`plot10.py`**: Plotting utilities for T-count vs. distance analysis in Unitary 10
+- **`parser.py`**: Parsing utility for converting qasm to quantum gates
 
 ### `qasm/` - QASM Circuit Files
 
