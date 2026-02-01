@@ -181,7 +181,7 @@ its structure in the computational basis would be reminiscent of the following:
 \end{equation}
 where the $*$ symbols depict ``free variables'' that we don't care about the specific values of. The key observation is that for this matrix to be unitary, these columns must form an orthonormal basis, and the specific values of these free variables will greatly affect the number of $T$ gates.
 
-Therefore, our protocol is the following: we first generate a complete unitary using the Gram-Schmidt process, encoding randomness on many different diagonal matrices that are applied to each sample unitary. We then test each candidate unitary over many different values of $\epsilon$. To balance the tradeoff, we start with a fidelity threshold compared to the expected state, and once that is hit, we then test over $\epsilon$ to minimize the number of $T$ gates.
+Therefore, our protocol is the following: we first generate a complete unitary using the Gram-Schmidt process, encoding randomness on many different diagonal matrices that are applied to each sample unitary.~\cite{Zhang2021QuantumGS} We then test each candidate unitary over many different values of $\epsilon$. To balance the tradeoff, we start with a fidelity threshold compared to the expected state, and once that is hit, we then test over $\epsilon$ to minimize the number of $T$ gates.
 
 More precisely, we transpile the circuit into rotation gates using \texttt{qiskit}, and then decompose each one with a different most optimized $\epsilon$ value by comparing individually to the fidelity of the state with that operator applied as well as its individual $T$ gate count.
 
