@@ -22,7 +22,7 @@ the operator metric in unitary10.py, giving the synthesizer more room to
 trade accuracy on the unused columns for fewer T gates.
 """
 
-import numpy as np
+import numpy as np 
 from qiskit import QuantumCircuit, quantum_info, transpile
 from qiskit.quantum_info import Operator
 from qiskit.qasm3 import dumps as dumps3
@@ -30,6 +30,7 @@ from qiskit.circuit.library import UnitaryGate
 
 from utils import Rz, Ry, Rx
 from test import count_t_gates_manual
+from optim import _synthesize, normalize_angle, build_circuit, total_t_count
 
 # ── target (must match test.py case 7) ─────────────────────────────────────
 statevector = quantum_info.random_statevector(4, seed=42).data
@@ -101,10 +102,6 @@ def state_prep_fidelity(unitary_matrix, target_sv):
 
 # ── gate extraction (KAK → u3 + cx → Rz/Ry/Rx list) ──────────────────────
 
-def normalize_angle(a):
-    """Reduce angle to (-π, π]."""
-    return float((a + np.pi) % (2 * np.pi) - np.pi)
-
 
 def extract_ops(target_matrix):
     """Transpile a 2-qubit unitary and return a flat op list.
@@ -158,41 +155,6 @@ def extract_ops(target_matrix):
 
 _cache: dict[tuple, tuple] = {}
 
-
-def _synthesize(axis, angle, eps):
-    """Synthesize one rotation into Clifford+T.  Returns (gate, t_count)."""
-    key = (axis, angle, eps)
-    if key in _cache:
-        return _cache[key]
-    sub = {"rz": Rz, "ry": Ry, "rx": Rx}[axis](angle, eps)
-    gate = sub.to_gate()
-    tc   = count_t_gates_manual(dumps3(sub))
-    _cache[key] = (gate, tc)
-    return gate, tc
-
-
-def build_circuit(ops, eps_list):
-    """Assemble the full 2-qubit Clifford+T circuit."""
-    qc = QuantumCircuit(2)
-    rot_idx = 0
-    for op in ops:
-        if op[0] == "cx":
-            qc.cx(op[1], op[2])
-        else:
-            gate, _ = _synthesize(op[0], op[2], eps_list[rot_idx])
-            qc.append(gate, [op[1]])
-            rot_idx += 1
-    return qc
-
-
-def total_t_count(ops, rotation_indices, eps_list):
-    """Sum T-counts over all synthesized rotations."""
-    return sum(
-        _synthesize(ops[idx][0], ops[idx][2], eps_list[j])[1]
-        for j, idx in enumerate(rotation_indices)
-    )
-
-
 # ── per-candidate optimization (Phase 1 + Phase 2) ────────────────────────
 
 def optimize_candidate(target_matrix, target_sv, cid):
@@ -210,7 +172,7 @@ def optimize_candidate(target_matrix, target_sv, cid):
     hit_eps = None
     for eps in EPS_COARSE:
         eps_list = [eps] * n_rot
-        qc   = build_circuit(ops, eps_list)
+        qc   = build_circuit(ops, eps_list, _cache)
         fid  = state_prep_fidelity(Operator(qc).data, target_sv)
         if fid >= TARGET_FIDELITY:
             hit_eps = eps
@@ -224,7 +186,7 @@ def optimize_candidate(target_matrix, target_sv, cid):
     current_eps = [hit_eps] * n_rot
     current_t   = total_t_count(ops, rotation_indices, current_eps)
     current_fid = state_prep_fidelity(
-        Operator(build_circuit(ops, current_eps)).data,
+        Operator(build_circuit(ops, current_eps, _cache)).data,
         target_sv,
     )
 
@@ -237,20 +199,20 @@ def optimize_candidate(target_matrix, target_sv, cid):
             axis      = ops[idx][0]
             angle     = ops[idx][2]
             orig_eps  = current_eps[j]
-            _, orig_tc = _synthesize(axis, angle, orig_eps)
+            _, orig_tc = _synthesize(axis, angle, orig_eps, _cache)
 
             for factor in RELAXATION_FACTORS:
                 trial_eps = orig_eps * factor
                 if trial_eps > 0.5:
                     continue
-                _, trial_tc = _synthesize(axis, angle, trial_eps)
+                _, trial_tc = _synthesize(axis, angle, trial_eps, _cache)
                 if trial_tc >= orig_tc:
                     continue                      # no T saving → skip
 
                 trial_eps_list = current_eps.copy()
                 trial_eps_list[j] = trial_eps
                 trial_fid = state_prep_fidelity(
-                    Operator(build_circuit(ops, trial_eps_list)).data,
+                    Operator(build_circuit(ops, trial_eps_list, _cache)).data,
                     target_sv,
                 )
 
@@ -264,7 +226,7 @@ def optimize_candidate(target_matrix, target_sv, cid):
         if not improved:
             break
 
-    qc = build_circuit(ops, current_eps)
+    qc = build_circuit(ops, current_eps, _cache)
     print(f"  [{cid:2d}] T={current_t:4d}  fidelity={current_fid:.10f}  "
           f"({n_rot} rot, {n_cx} cx)")
     return qc, current_t, current_fid, ops, rotation_indices, current_eps
@@ -306,7 +268,7 @@ else:
     for j, idx in enumerate(rot_idx):
         axis  = ops[idx][0]
         angle = ops[idx][2]
-        _, tc_j = _synthesize(axis, angle, eps_list[j])
+        _, tc_j = _synthesize(axis, angle, eps_list[j], _cache)
         print(f"    rot[{j}] {axis}({angle:+.6f}) q{ops[idx][1]}: "
               f"eps={eps_list[j]:.1e}  T={tc_j}")
 

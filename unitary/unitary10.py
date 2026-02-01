@@ -7,6 +7,7 @@ from qiskit.circuit.library import UnitaryGate
 
 from utils import Rz, Ry, Rx
 from test import count_t_gates_manual
+from optim import _synthesize, normalize_angle, build_circuit, total_t_count
 
 # --- Setup ---
 unitary = quantum_info.random_unitary(4, seed=42)
@@ -22,9 +23,6 @@ template = transpile(
 )
 
 ANGLE_TOL = 1e-9
-
-def normalize_angle(a):
-    return float((a + np.pi) % (2 * np.pi) - np.pi)
 
 ops = []
 for inst in template.data:
@@ -51,37 +49,6 @@ for inst in template.data:
 rotation_indices = [i for i, op in enumerate(ops) if op[0] in ("rx", "ry", "rz")]
 n_rotations = len(rotation_indices)
 _cache: dict[tuple, tuple] = {}
-
-def _synthesize(axis, angle, eps):
-    key = (axis, angle, eps)
-    if key in _cache: return _cache[key]
-    if axis == "rz": subcircuit = Rz(angle, eps)
-    elif axis == "ry": subcircuit = Ry(angle, eps)
-    else: subcircuit = Rx(angle, eps)
-    gate = subcircuit.to_gate()
-    tc = count_t_gates_manual(dumps3(subcircuit))
-    _cache[key] = (gate, tc)
-    return gate, tc
-
-def build_circuit(eps_list):
-    qc = QuantumCircuit(2)
-    rot_idx = 0
-    for op in ops:
-        if op[0] == "cx":
-            qc.cx(op[1], op[2])
-        else:
-            gate, _ = _synthesize(op[0], op[2], eps_list[rot_idx])
-            qc.append(gate, [op[1]])
-            rot_idx += 1
-    return qc
-
-def total_t_count(eps_list):
-    total = 0
-    for j, idx in enumerate(rotation_indices):
-        axis, angle = ops[idx][0], ops[idx][2]
-        _, tc = _synthesize(axis, angle, eps_list[j])
-        total += tc
-    return total
 
 def operator_distance(actual, reference):
     d = actual.shape[0]
@@ -114,7 +81,7 @@ for TARGET_DIST in TARGET_DISTANCES:
     best_uniform_eps = None
     for eps in EPS_COARSE_SWEEP:
         eps_list = [eps] * n_rotations
-        qc = build_circuit(eps_list)
+        qc = build_circuit(eps_list, eps_list, _cache)
         dist = operator_distance(Operator(qc).data, target)
         if dist < TARGET_DIST:
             best_uniform_eps = eps
@@ -127,8 +94,8 @@ for TARGET_DIST in TARGET_DISTANCES:
 
     # Phase 2: Per-rotation relaxation
     current_eps = [best_uniform_eps] * n_rotations
-    current_t = total_t_count(current_eps)
-    current_dist = operator_distance(Operator(build_circuit(current_eps)).data, target)
+    current_t = total_t_count(current_eps, rotation_indices, eps_list)
+    current_dist = operator_distance(Operator(build_circuit(current_eps, eps_list, _cache)).data, target)
 
     iteration = 0
     while True:
@@ -137,18 +104,18 @@ for TARGET_DIST in TARGET_DISTANCES:
         for j in range(n_rotations):
             idx = rotation_indices[j]
             axis, angle, orig_eps = ops[idx][0], ops[idx][2], current_eps[j]
-            _, orig_tc_j = _synthesize(axis, angle, orig_eps)
+            _, orig_tc_j = _synthesize(axis, angle, orig_eps, _cache)
 
             for factor in RELAXATION_FACTORS:
                 trial_eps = orig_eps * factor
                 if trial_eps > 0.5: continue
                 
-                _, trial_tc_j = _synthesize(axis, angle, trial_eps)
+                _, trial_tc_j = _synthesize(axis, angle, trial_eps, _cache)
                 if trial_tc_j >= orig_tc_j: continue 
 
                 trial_eps_list = current_eps.copy()
                 trial_eps_list[j] = trial_eps
-                trial_dist = operator_distance(Operator(build_circuit(trial_eps_list)).data, target)
+                trial_dist = operator_distance(Operator(build_circuit(trial_eps_list, eps_list, _cache)).data, target)
 
                 if trial_dist < TARGET_DIST:
                     current_t = current_t - orig_tc_j + trial_tc_j
@@ -159,8 +126,8 @@ for TARGET_DIST in TARGET_DISTANCES:
         if not any_improved: break
 
     # Finalize result for this target
-    final_qc = build_circuit(current_eps)
-    final_t = total_t_count(current_eps)
+    final_qc = build_circuit(current_eps, eps_list, _cache)
+    final_t = total_t_count(current_eps, rotation_indices, eps_list)
     final_dist = operator_distance(Operator(final_qc).data, target)
 
     print(f"DONE -> Target: {TARGET_DIST} | Final T: {final_t} | Final Dist: {final_dist:.6e}")

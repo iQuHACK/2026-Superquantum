@@ -6,6 +6,7 @@ from qiskit.qasm3 import dumps as dumps3
 
 from utils import Ry
 from utils import Rz
+from utils import Rx
 from test import count_t_gates_manual, distance_global_phase, expected as EXPECTED_DICT
 
 def run_optimization(unitary_id, theta):
@@ -88,3 +89,40 @@ def run_optimization(unitary_id, theta):
 if __name__ == "__main__":
     # change to run w diff unitarys
     run_optimization(6, math.pi/7)
+
+
+#Shared functions 
+
+def _synthesize(axis, angle, eps, _cache):
+    """Synthesize one rotation into Clifford+T.  Returns (gate, t_count)."""
+    key = (axis, angle, eps)
+    if key in _cache:
+        return _cache[key]
+    sub = {"rz": Rz, "ry": Ry, "rx": Rx}[axis](angle, eps)
+    gate = sub.to_gate()
+    tc = count_t_gates_manual(dumps3(sub))
+    _cache[key] = (gate, tc)
+    return gate, tc
+
+def normalize_angle(a):
+    """Reduce angle to (-π, π]."""
+    return float((a + np.pi) % (2 * np.pi) - np.pi)
+
+def build_circuit(ops, eps_list, _cache):
+    """Assemble the full 2-qubit Clifford+T circuit."""
+    qc = QuantumCircuit(2)
+    rot_idx = 0
+    for op in ops:
+        if op[0] == "cx":
+            qc.cx(op[1], op[2])
+        else:
+            gate, _ = _synthesize(op[0], op[2], eps_list[rot_idx], _cache)
+            qc.append(gate, [op[1]])
+            rot_idx += 1
+    return qc
+
+def total_t_count(ops, rotation_indices, eps_list):
+    return sum(
+        _synthesize(ops[idx][0], ops[idx][2], eps_list[j])[1]
+        for j, idx in enumerate(rotation_indices)
+    )
